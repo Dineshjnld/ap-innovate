@@ -3,9 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import Header from "@/components/Header";
 import ProjectDetail from "@/components/ProjectDetail";
 import ProjectDiscussion from "@/components/ProjectDiscussion";
+import ProjectApproval from "@/components/ProjectApproval";
 import type { DiscussionComment, Project } from "@/data/mockData";
 import { createComment, subscribeProjectComments } from "@/services/realtime";
 import { seedDatabaseIfEmpty, subscribeProjectById } from "@/services/database";
+import { socketService } from "@/services/socket";
 
 const ProjectPage = () => {
   const params = useParams<{ projectId: string }>();
@@ -29,6 +31,27 @@ const ProjectPage = () => {
     });
 
     return unsubscribe;
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    const socket = socketService.getSocket();
+    socketService.joinProject(projectId);
+
+    const onNewComment = (comment: DiscussionComment) => {
+      setComments((prev) => {
+        if (prev.some((c) => c.id === comment.id)) return prev;
+        return [...prev, comment];
+      });
+    };
+
+    socket?.on("comment-created", onNewComment);
+
+    return () => {
+      socket?.off("comment-created", onNewComment);
+      socketService.leaveProject(projectId);
+    };
   }, [projectId]);
 
   useEffect(() => {
@@ -63,12 +86,21 @@ const ProjectPage = () => {
         onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")}
         onSearchChange={() => undefined}
       />
-      <main className="mx-auto max-w-5xl px-4 pt-40 pb-6 space-y-6">
+      <main className="mx-auto max-w-5xl px-4 pt-44 pb-6 space-y-6">
         <ProjectDetail project={project} onBack={() => navigate("/hub")} />
+
+        <ProjectApproval
+          project={project}
+          onStatusUpdated={(updated) => setProject(updated)}
+        />
+
         <ProjectDiscussion
           comments={comments}
-          onCreateComment={(content, parentId) => {
-            createComment({ projectId, content, parentId });
+          onCreateComment={async (content, parentId) => {
+            const result = await createComment({ projectId, content, parentId });
+            if (result) {
+              setComments((current) => [...current, result]);
+            }
           }}
         />
       </main>

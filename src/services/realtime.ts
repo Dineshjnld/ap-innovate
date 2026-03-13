@@ -12,6 +12,8 @@ import {
   subscribeCurrentUserProfile,
   subscribeProjectComments,
   updateCurrentUserProfile,
+  clearAllNotifications,
+  deleteNotificationById,
 } from "@/services/database";
 
 export {
@@ -28,4 +30,6 @@ export {
   subscribeCurrentUserProfile,
   subscribeProjectComments,
   updateCurrentUserProfile,
+  clearAllNotifications,
+  deleteNotificationById,
 };

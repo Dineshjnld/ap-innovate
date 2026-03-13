@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, ArrowUp } from "lucide-react";
 import { subscribeActivityFeed } from "@/services/realtime";
 import type { FeedItem } from "@/data/mockData";
+import { socketService } from "@/services/socket";
 
 interface LiveFlashTickerProps {
   onOpenProject: (projectId: string) => void;
@@ -11,6 +12,24 @@ const MAX_STREAM_ITEMS = 12;
 
 const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
   const [items, setItems] = useState<FeedItem[]>([]);
+
+  useEffect(() => {
+    const socket = socketService.getSocket();
+    
+    const onNewActivity = (activity: FeedItem) => {
+      setItems((prev) => {
+        // Avoid duplicates if polling also adds it
+        if (prev.some(a => a.id === activity.id)) return prev;
+        return [...prev, activity];
+      });
+    };
+
+    socket?.on("activity-created", onNewActivity);
+
+    return () => {
+      socket?.off("activity-created", onNewActivity);
+    };
+  }, []);
 
   useEffect(() => {
     return subscribeActivityFeed((feed) => {

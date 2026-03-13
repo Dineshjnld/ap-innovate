@@ -44,7 +44,7 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
   }, [session]);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50">
+    <header className="fixed inset-x-0 top-0 z-[100]">
       <div className="gradient-navy border-b border-navy-light">
         <div className="mx-auto grid h-24 max-w-7xl grid-cols-3 items-center px-4 sm:px-6 lg:px-8">
           <button
@@ -121,52 +121,66 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
             type="button"
             variant="ghost"
             size="icon"
-            className="relative text-primary-foreground hover:bg-navy-light"
+            className="relative text-primary-foreground hover:bg-navy-light shrink-0"
             onClick={() => navigate("/messages")}
           >
             <MessageSquare className="h-5 w-5" />
             {unreadMessages > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gold px-1 text-[10px] font-bold text-navy-dark">
+              <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-tr from-gold to-yellow-300 px-1 text-[9px] font-black text-navy-dark shadow-sm border border-navy/20">
                 {unreadMessages > 99 ? "99+" : unreadMessages}
               </span>
             ) : null}
           </Button>
+
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="text-primary-foreground hover:bg-navy-light relative"
+            className="text-primary-foreground hover:bg-navy-light relative shrink-0"
             onClick={() => navigate("/notifications")}
           >
             <Bell className="h-5 w-5" />
             {unreadNotifications > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gold px-1 text-[10px] font-bold text-navy-dark">
+              <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-tr from-gold to-yellow-300 px-1 text-[9px] font-black text-navy-dark shadow-sm border border-navy/20">
                 {unreadNotifications > 99 ? "99+" : unreadNotifications}
               </span>
             ) : null}
           </Button>
+
+          <div className="h-8 w-px bg-navy-light/40 mx-1 hidden sm:block" />
+
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="hidden sm:inline-flex border-navy-light bg-navy-light/40 text-primary-foreground hover:bg-navy-light"
+            className="hidden sm:inline-flex border-navy-light bg-navy-light/40 text-primary-foreground hover:bg-navy-light pl-1.5 pr-3 items-center gap-2 rounded-full ring-offset-navy/40"
             onClick={() => navigate("/profile")}
           >
-            <User className="h-4 w-4 mr-1" />
-            Profile
+            <div className="h-6 w-6 rounded-full overflow-hidden bg-gold/10 border border-gold/30">
+              {session?.user?.avatar ? (
+                <img src={session.user.avatar} alt={session.user.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center text-[10px] font-bold text-gold">
+                  {session?.user?.name?.[0] || "?"}
+                </div>
+              )}
+            </div>
+            <span className="font-semibold text-xs tracking-tight">
+              {session?.user?.name ? session.user.name.split(" ")[0] : "Officer"}
+            </span>
           </Button>
+
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="border-navy-light bg-navy-light/40 text-primary-foreground hover:bg-navy-light"
+            className="text-primary-foreground/60 hover:text-red-400 hover:bg-red-400/10 transition-colors"
             onClick={() => {
               signOut();
               navigate("/signin", { replace: true });
             }}
           >
-            <LogOut className="h-4 w-4 mr-1" />
-            Sign out
+            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>

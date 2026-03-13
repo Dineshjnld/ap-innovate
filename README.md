@@ -82,20 +82,40 @@ This project includes an auth API at [server/index.mjs](server/index.mjs) with:
 - `/api/users/me` profile APIs
 - `/api/users` and `/api/users/:userId` for user discovery
 
-### Local Run
+### Modern Auth & Database Setup (Recommended)
 
-1. Copy [server/.env.example](server/.env.example) to `server/.env` and set values.
-2. Start API:
+The most robust way to run the platform is using **Docker**. This ensures the PostgreSQL database and API are configured perfectly for you.
 
-```sh
-npm run api
-```
+1. **Install Docker Desktop** (if you haven't already).
+2. **Start the Platform**:
+   ```sh
+   docker compose up --build
+   ```
+   This will spin up:
+   - **PostgreSQL Database** (Container: `ap-innovate-db`)
+   - **Auth API Server** (Container: `ap-innovate-api`)
 
-3. Start frontend (in another terminal):
+3. **Open the App**:
+   Navigate to `http://localhost:8080` in your browser.
 
-```sh
-npm run dev
-```
+---
+
+### Manual / Local Run
+
+If you prefer to run the API directly on your host machine:
+
+1. **Start only the Database**:
+   ```sh
+   docker compose up -d db
+   ```
+2. **Start the API**:
+   ```sh
+   npm run api
+   ```
+3. **Start the Frontend**:
+   ```sh
+   npm run dev
+   ```
 
 ### Cloud Deployment Notes
 

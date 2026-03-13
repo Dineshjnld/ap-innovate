@@ -2,7 +2,7 @@ import { Project } from "@/data/mockData";
 import {
   ArrowLeft, MapPin, Calendar, MessageSquare, CheckCircle2,
   Clock, FileText, Paperclip, ExternalLink, IndianRupee,
-  User as UserIcon, History,
+  User as UserIcon, History, XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -134,20 +134,34 @@ const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
             </section>
           )}
 
-          {/* Approval */}
+          {/* Command Feedback / Approval */}
           {project.approvedBy && (
-            <section className="rounded-lg border-2 border-success/30 bg-success/5 p-5">
+            <section className={`rounded-lg border-2 p-5 ${project.status === 'approved' ? 'border-success/30 bg-success/5' :
+              project.status === 'rejected' ? 'border-destructive/30 bg-destructive/5' :
+                'border-warning/30 bg-warning/5'
+              }`}>
               <div className="flex items-center gap-2 mb-3">
-                <CheckCircle2 className="h-5 w-5 text-success" />
-                <h2 className="text-lg font-bold text-success font-display">Approved</h2>
+                {project.status === 'approved' && <CheckCircle2 className="h-5 w-5 text-success" />}
+                {project.status === 'rejected' && <XCircle className="h-5 w-5 text-destructive" />}
+                {project.status === 'under_review' && <Clock className="h-5 w-5 text-warning" />}
+                <h2 className={`text-lg font-bold font-display ${project.status === 'approved' ? 'text-success' :
+                  project.status === 'rejected' ? 'text-destructive' :
+                    'text-warning'
+                  }`}>
+                  {project.status === 'approved' ? 'Approved' :
+                    project.status === 'rejected' ? 'Rejected' :
+                      'Under Review'}
+                </h2>
               </div>
               <p className="text-sm text-foreground">
                 <span className="font-semibold">{project.approvedBy.rank} {project.approvedBy.name}</span>
                 {" • "}{project.approvedBy.date}
               </p>
-              <p className="text-sm text-muted-foreground mt-2 italic">
-                "{project.approvedBy.comment}"
-              </p>
+              <div className="mt-3 p-3 bg-white/50 dark:bg-black/20 rounded-lg border border-border/50">
+                <p className="text-sm text-muted-foreground italic">
+                  "{project.approvedBy.comment}"
+                </p>
+              </div>
             </section>
           )}
         </div>
