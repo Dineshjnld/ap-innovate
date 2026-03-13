@@ -1,19 +1,25 @@
 import { useState } from "react";
-import { CATEGORIES, DISTRICTS } from "@/data/mockData";
 import { Filter, MapPin, Tag } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface FilterPanelProps {
   selectedCategories: string[];
   selectedDistricts: string[];
+  categories: string[];
+  districts: string[];
   onCategoriesChange: (cats: string[]) => void;
   onDistrictsChange: (dists: string[]) => void;
+  onRunFilters: () => void;
 }
 
 const FilterPanel = ({
   selectedCategories,
   selectedDistricts,
+  categories,
+  districts,
   onCategoriesChange,
   onDistrictsChange,
+  onRunFilters,
 }: FilterPanelProps) => {
   const [catExpanded, setCatExpanded] = useState(true);
   const [distExpanded, setDistExpanded] = useState(true);
@@ -39,6 +45,7 @@ const FilterPanel = ({
       {/* Categories */}
       <div className="rounded-xl bg-card shadow-card border border-border overflow-hidden">
         <button
+          type="button"
           onClick={() => setCatExpanded(!catExpanded)}
           className="flex w-full items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
         >
@@ -49,19 +56,20 @@ const FilterPanel = ({
           <Filter className="h-4 w-4 text-muted-foreground" />
         </button>
         {catExpanded && (
-          <div className="px-4 pb-3 flex flex-wrap gap-2">
-            {CATEGORIES.map((cat) => (
-              <button
+          <div className="px-4 pb-4 space-y-2">
+            {categories.map((cat) => (
+              <label
                 key={cat}
-                onClick={() => toggleCategory(cat)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                  selectedCategories.includes(cat)
-                    ? "bg-gold text-navy-dark shadow-sm"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
+                className="flex items-center gap-2 text-xs text-foreground"
               >
+                <input
+                  type="checkbox"
+                  checked={selectedCategories.includes(cat)}
+                  onChange={() => toggleCategory(cat)}
+                  className="h-3.5 w-3.5 rounded border-border"
+                />
                 {cat}
-              </button>
+              </label>
             ))}
           </div>
         )}
@@ -70,6 +78,7 @@ const FilterPanel = ({
       {/* Districts */}
       <div className="rounded-xl bg-card shadow-card border border-border overflow-hidden">
         <button
+          type="button"
           onClick={() => setDistExpanded(!distExpanded)}
           className="flex w-full items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
         >
@@ -80,23 +89,43 @@ const FilterPanel = ({
           <Filter className="h-4 w-4 text-muted-foreground" />
         </button>
         {distExpanded && (
-          <div className="px-4 pb-3 max-h-48 overflow-y-auto space-y-1">
-            {DISTRICTS.map((dist) => (
-              <button
-                key={dist}
-                onClick={() => toggleDistrict(dist)}
-                className={`flex w-full items-center rounded-md px-3 py-1.5 text-xs transition-all ${
-                  selectedDistricts.includes(dist)
-                    ? "bg-info/10 text-info font-medium"
-                    : "text-muted-foreground hover:bg-muted/50"
-                }`}
-              >
-                {dist}
-              </button>
-            ))}
+          <div className="px-4 pb-4 space-y-3">
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-input bg-background px-3 py-2 space-y-1.5">
+              {districts.map((dist) => (
+                <label key={dist} className="flex items-center gap-2 text-xs text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={selectedDistricts.includes(dist)}
+                    onChange={() => toggleDistrict(dist)}
+                    className="h-3.5 w-3.5 rounded border-border"
+                  />
+                  {dist}
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {selectedDistricts.map((dist) => (
+                <button
+                  key={dist}
+                  type="button"
+                  onClick={() => toggleDistrict(dist)}
+                  className="rounded-full bg-info/10 px-2 py-0.5 text-[11px] text-info"
+                >
+                  {dist}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
+
+      <Button
+        type="button"
+        className="w-full bg-gold text-navy-dark hover:bg-gold-dark font-semibold"
+        onClick={onRunFilters}
+      >
+        Run Filters
+      </Button>
     </div>
   );
 };

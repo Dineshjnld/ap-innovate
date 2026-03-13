@@ -70,6 +70,15 @@ export interface FeedItem {
   timestamp: string;
 }
 
+export interface DiscussionComment {
+  id: string;
+  projectId: string;
+  author: User;
+  content: string;
+  createdAt: string;
+  parentId: string | null;
+}
+
 export const MOCK_CURRENT_USER: User = {
   id: "u1",
   name: "Rajesh Kumar",
@@ -210,4 +219,39 @@ export const MOCK_FEED: FeedItem[] = [
   { id: "f4", user: MOCK_USERS[1], action: "posted a new innovation", projectTitle: "Cyber Crime Rapid Response Unit", projectId: "p3", timestamp: "2 days ago" },
   { id: "f5", user: MOCK_USERS[3], action: "received approval for", projectTitle: "Community Policing Mobile App", projectId: "p4", timestamp: "2 weeks ago" },
   { id: "f6", user: MOCK_USERS[2], action: "posted a new innovation", projectTitle: "ANPR-Based Traffic Enforcement", projectId: "p2", timestamp: "3 weeks ago" },
+];
+
+export const MOCK_DISCUSSION_COMMENTS: DiscussionComment[] = [
+  {
+    id: "c1",
+    projectId: "p1",
+    author: MOCK_USERS[0],
+    content: "This system may help optimize peak-hour patrol coverage.",
+    createdAt: "2026-03-11T09:30:00Z",
+    parentId: null,
+  },
+  {
+    id: "c2",
+    projectId: "p1",
+    author: MOCK_USERS[2],
+    content: "Agreed. We should integrate ANPR checkpoints for better incident correlation.",
+    createdAt: "2026-03-11T10:00:00Z",
+    parentId: "c1",
+  },
+  {
+    id: "c3",
+    projectId: "p1",
+    author: MOCK_USERS[3],
+    content: "Yes, ANPR integration can improve case handoff for investigation teams.",
+    createdAt: "2026-03-11T10:25:00Z",
+    parentId: "c2",
+  },
+  {
+    id: "c4",
+    projectId: "p3",
+    author: MOCK_USERS[1],
+    content: "Need SOP templates for bank escalation during first 30 minutes.",
+    createdAt: "2026-03-10T14:12:00Z",
+    parentId: null,
+  },
 ];

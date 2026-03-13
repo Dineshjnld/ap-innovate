@@ -2,10 +2,11 @@ import { useState } from "react";
 import { CATEGORIES, DISTRICTS } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Upload, Link as LinkIcon, X } from "lucide-react";
+import type { CreateProjectInput } from "@/services/database";
 
 interface CreateProjectFormProps {
   onBack: () => void;
-  onSubmit: () => void;
+  onSubmit: (input: CreateProjectInput) => Promise<void>;
 }
 
 const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
@@ -16,6 +17,9 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
   const [solution, setSolution] = useState("");
   const [budget, setBudget] = useState("");
   const [externalLink, setExternalLink] = useState("");
+  const [externalLinks, setExternalLinks] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) =>
@@ -23,9 +27,50 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit();
+    setError(null);
+
+    if (selectedCategories.length === 0) {
+      setError("Select at least one innovation category.");
+      return;
+    }
+
+    if (budget.trim().length > 0 && Number(budget) < 0) {
+      setError("Budget cannot be negative.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await onSubmit({
+        title,
+        category: selectedCategories,
+        district,
+        problemStatement: problem,
+        proposedSolution: solution,
+        budget: budget.trim().length > 0 ? Number(budget) : 0,
+        externalLinks,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddExternalLink = () => {
+    const value = externalLink.trim();
+    if (value.length === 0) {
+      return;
+    }
+
+    if (externalLinks.includes(value)) {
+      setExternalLink("");
+      return;
+    }
+
+    setExternalLinks((prev) => [...prev, value]);
+    setExternalLink("");
   };
 
   return (
@@ -41,6 +86,12 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Project Title *</label>
@@ -79,6 +130,7 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">District *</label>
             <select
+              aria-label="District"
               value={district}
               onChange={(e) => setDistrict(e.target.value)}
               className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-gold/50"
@@ -155,10 +207,27 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
                   className="w-full rounded-lg border border-input bg-background pl-9 pr-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-gold/50 placeholder:text-muted-foreground"
                 />
               </div>
-              <Button type="button" variant="outline" size="sm" className="shrink-0">
+              <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={handleAddExternalLink}>
                 Add
               </Button>
             </div>
+            {externalLinks.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {externalLinks.map((link) => (
+                  <span key={link} className="inline-flex items-center gap-1 rounded-full bg-info/10 px-2.5 py-1 text-xs text-info">
+                    {link}
+                    <button
+                      type="button"
+                      aria-label={`Remove link ${link}`}
+                      title="Remove link"
+                      onClick={() => setExternalLinks((prev) => prev.filter((item) => item !== link))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Submit */}
@@ -166,8 +235,8 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
             <Button type="button" variant="outline" onClick={onBack} className="flex-1">
               Cancel
             </Button>
-            <Button type="submit" className="flex-1 bg-gold text-navy-dark hover:bg-gold-dark font-semibold">
-              Submit Innovation
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gold text-navy-dark hover:bg-gold-dark font-semibold">
+              {isSubmitting ? "Submitting..." : "Submit Innovation"}
             </Button>
           </div>
         </form>

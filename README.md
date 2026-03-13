@@ -71,3 +71,36 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Backend Auth API (Cloud Ready)
+
+This project includes an auth API at [server/index.mjs](server/index.mjs) with:
+
+- Database-backed sign up/sign in
+- Bcrypt password hashing
+- JWT token auth
+- `/api/users/me` profile APIs
+- `/api/users` and `/api/users/:userId` for user discovery
+
+### Local Run
+
+1. Copy [server/.env.example](server/.env.example) to `server/.env` and set values.
+2. Start API:
+
+```sh
+npm run api
+```
+
+3. Start frontend (in another terminal):
+
+```sh
+npm run dev
+```
+
+### Cloud Deployment Notes
+
+- Set `JWT_SECRET` to a long random secret.
+- Set `CORS_ORIGIN` to your frontend domain.
+- Set `DATABASE_URL` to your managed Postgres instance.
+- Set `PGSSL=true` when provider requires SSL.
+- Set frontend `VITE_API_BASE_URL` to your deployed API URL.

@@ -120,7 +120,14 @@ const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
                 {project.externalLinks.map((link) => (
                   <div key={link} className="flex items-center gap-2 rounded-lg border border-border px-4 py-2.5">
                     <ExternalLink className="h-4 w-4 text-info" />
-                    <span className="text-sm text-info">{link}</span>
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-info underline-offset-2 hover:underline"
+                    >
+                      {link}
+                    </a>
                   </div>
                 ))}
               </div>
@@ -143,19 +150,6 @@ const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
               </p>
             </section>
           )}
-
-          {/* Discussion placeholder */}
-          <section>
-            <h2 className="text-lg font-bold text-foreground font-display mb-3">
-              Discussion ({project.commentsCount})
-            </h2>
-            <div className="rounded-lg border border-border bg-muted/50 p-6 text-center">
-              <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                Discussion threads will appear here. Connect a backend to enable comments.
-              </p>
-            </div>
-          </section>
         </div>
       </div>
     </div>

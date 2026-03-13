@@ -23,6 +23,7 @@ const ProjectCard = ({ project, onView }: ProjectCardProps) => {
 
   return (
     <button
+      type="button"
       onClick={() => onView(project.id)}
       className="block w-full text-left rounded-xl bg-card border border-border shadow-card hover:shadow-card-hover transition-all duration-300 overflow-hidden group"
     >

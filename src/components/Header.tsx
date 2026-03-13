@@ -1,96 +1,175 @@
-import { useState } from "react";
-import {
-  Search, Bell, MessageSquare, LogOut, Menu, X, Plus,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, Home, LogOut, MessageSquare, Search, User } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
+import type { MessageItem, NotificationItem } from "@/services/database";
+import { subscribeCurrentUserMessages, subscribeCurrentUserNotifications } from "@/services/realtime";
 import apPoliceLogo from "@/assets/ap-police-logo.png";
+import dgpLogo from "@/assets/dgp.png";
 
 interface HeaderProps {
-  onCreateProject: () => void;
-  onNavigate: (page: string) => void;
+  onNavigate: (page: "dashboard" | "create-project") => void;
+  onSearchChange: (value: string) => void;
 }
 
-const Header = ({ onCreateProject, onNavigate }: HeaderProps) => {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
+  const navigate = useNavigate();
+  const { signOut, session } = useAuth();
+  const [query, setQuery] = useState("");
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  useEffect(() => {
+    const stopMessages = subscribeCurrentUserMessages((items: MessageItem[]) => {
+      const currentUserId = session?.user.id;
+      if (!currentUserId) {
+        setUnreadMessages(0);
+        return;
+      }
+
+      const count = items.filter((item) => item.to === currentUserId && !item.read).length;
+      setUnreadMessages(count);
+    });
+
+    const stopNotifications = subscribeCurrentUserNotifications((items: NotificationItem[]) => {
+      const count = items.filter((item) => !item.read).length;
+      setUnreadNotifications(count);
+    });
+
+    return () => {
+      stopMessages();
+      stopNotifications();
+    };
+  }, [session]);
 
   return (
-    <header className="gradient-navy sticky top-0 z-50 border-b border-navy-light">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-        {/* Logo */}
-        <button
-          onClick={() => onNavigate("dashboard")}
-          className="flex items-center gap-3"
-        >
-          <img src={apPoliceLogo} alt="AP Police" className="h-10 w-10 object-contain" />
-          <div className="hidden sm:block">
-            <h1 className="text-sm font-bold leading-tight text-primary-foreground font-display">
-              AP Police
-            </h1>
-            <p className="text-xs text-gold">Innovation Hub</p>
-          </div>
-        </button>
+    <header className="fixed inset-x-0 top-0 z-50">
+      <div className="gradient-navy border-b border-navy-light">
+        <div className="mx-auto grid h-24 max-w-7xl grid-cols-3 items-center px-4 sm:px-6 lg:px-8">
+          <button
+            type="button"
+            onClick={() => onNavigate("dashboard")}
+            className="justify-self-start"
+          >
+            <img src={apPoliceLogo} alt="AP Police" className="h-12 w-12 sm:h-14 sm:w-14 object-contain" />
+          </button>
 
-        {/* Search */}
-        <div className="hidden md:flex relative mx-6 flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search innovations, officers, districts..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 w-full rounded-lg bg-navy-light/50 pl-9 pr-4 text-sm text-primary-foreground placeholder:text-primary-foreground/40 outline-none focus:ring-2 focus:ring-gold/50 border border-navy-light"
+          <button
+            type="button"
+            onClick={() => onNavigate("dashboard")}
+            className="justify-self-center"
+          >
+            <h1 className="text-base sm:text-2xl font-bold leading-tight text-primary-foreground font-display text-center whitespace-nowrap">
+              AP Police Innovation Hub
+            </h1>
+          </button>
+
+          <img
+            src={dgpLogo}
+            alt="DGP"
+            className="justify-self-end h-12 w-12 sm:h-14 sm:w-14 rounded-md object-cover border border-gold/30"
           />
         </div>
-
-        {/* Actions */}
-        <div className="hidden md:flex items-center gap-2">
-          <Button
-            size="sm"
-            className="bg-gold text-navy-dark hover:bg-gold-dark font-semibold"
-            onClick={onCreateProject}
-          >
-            <Plus className="h-4 w-4" />
-            New Innovation
-          </Button>
-          <Button variant="ghost" size="icon" className="text-primary-foreground/70 hover:text-gold hover:bg-navy-light">
-            <MessageSquare className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="text-primary-foreground/70 hover:text-gold hover:bg-navy-light relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-gold animate-pulse-gold" />
-          </Button>
-          <Button variant="ghost" size="icon" className="text-primary-foreground/70 hover:text-gold hover:bg-navy-light">
-            <LogOut className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Mobile menu */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="md:hidden text-primary-foreground"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        >
-          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </Button>
       </div>
 
-      {mobileMenuOpen && (
-        <div className="md:hidden gradient-navy border-t border-navy-light px-4 pb-4 space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="border-b border-navy-light bg-navy/95 backdrop-blur-sm">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:px-6 lg:px-8">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onNavigate("dashboard")}
+            className="border-navy-light bg-navy-light/40 text-primary-foreground hover:bg-navy-light"
+          >
+            <Home className="h-4 w-4 mr-1" />
+            Home
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => onNavigate("create-project")}
+            className="bg-gold text-navy-dark hover:bg-gold-dark"
+          >
+            Submit Innovation
+          </Button>
+
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-foreground/60" />
             <input
               type="text"
-              placeholder="Search..."
-              className="h-9 w-full rounded-lg bg-navy-light/50 pl-9 pr-4 text-sm text-primary-foreground placeholder:text-primary-foreground/40 outline-none border border-navy-light"
+              placeholder="Search innovations, officers, districts..."
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                onSearchChange(event.target.value);
+              }}
+              className="h-9 w-full rounded-md border border-navy-light bg-navy-light/40 pl-9 pr-10 text-sm text-primary-foreground placeholder:text-primary-foreground/50 outline-none focus:ring-2 focus:ring-gold/40"
             />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/80 hover:bg-navy-light"
+              aria-label="Run search"
+              onClick={() => onSearchChange(query)}
+            >
+              <Search className="h-4 w-4" />
+            </button>
           </div>
-          <Button className="w-full bg-gold text-navy-dark hover:bg-gold-dark font-semibold" onClick={onCreateProject}>
-            <Plus className="h-4 w-4" /> New Innovation
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="relative text-primary-foreground hover:bg-navy-light"
+            onClick={() => navigate("/messages")}
+          >
+            <MessageSquare className="h-5 w-5" />
+            {unreadMessages > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gold px-1 text-[10px] font-bold text-navy-dark">
+                {unreadMessages > 99 ? "99+" : unreadMessages}
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-primary-foreground hover:bg-navy-light relative"
+            onClick={() => navigate("/notifications")}
+          >
+            <Bell className="h-5 w-5" />
+            {unreadNotifications > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gold px-1 text-[10px] font-bold text-navy-dark">
+                {unreadNotifications > 99 ? "99+" : unreadNotifications}
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="hidden sm:inline-flex border-navy-light bg-navy-light/40 text-primary-foreground hover:bg-navy-light"
+            onClick={() => navigate("/profile")}
+          >
+            <User className="h-4 w-4 mr-1" />
+            Profile
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-navy-light bg-navy-light/40 text-primary-foreground hover:bg-navy-light"
+            onClick={() => {
+              signOut();
+              navigate("/signin", { replace: true });
+            }}
+          >
+            <LogOut className="h-4 w-4 mr-1" />
+            Sign out
           </Button>
         </div>
-      )}
+      </div>
     </header>
   );
 };

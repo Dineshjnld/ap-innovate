@@ -1,12 +1,16 @@
-import { MOCK_PROJECTS, MOCK_CURRENT_USER } from "@/data/mockData";
-import { BarChart3, FileText, CheckCircle2, Clock, TrendingUp } from "lucide-react";
+import type { Project } from "@/data/mockData";
+import { FileText, CheckCircle2, Clock, TrendingUp } from "lucide-react";
 
-const StatsBar = () => {
+interface StatsBarProps {
+  projects: Project[];
+}
+
+const StatsBar = ({ projects }: StatsBarProps) => {
   const stats = [
-    { label: "Total Innovations", value: MOCK_PROJECTS.length, icon: <FileText className="h-5 w-5 text-info" />, bg: "bg-info/10" },
-    { label: "Approved", value: MOCK_PROJECTS.filter(p => p.status === "approved").length, icon: <CheckCircle2 className="h-5 w-5 text-success" />, bg: "bg-success/10" },
-    { label: "Under Review", value: MOCK_PROJECTS.filter(p => p.status === "under_review").length, icon: <Clock className="h-5 w-5 text-warning" />, bg: "bg-warning/10" },
-    { label: "Districts Active", value: new Set(MOCK_PROJECTS.map(p => p.district)).size, icon: <TrendingUp className="h-5 w-5 text-gold-dark" />, bg: "bg-gold/10" },
+    { label: "Total Innovations", value: projects.length, icon: <FileText className="h-5 w-5 text-info" />, bg: "bg-info/10" },
+    { label: "Approved", value: projects.filter((p) => p.status === "approved").length, icon: <CheckCircle2 className="h-5 w-5 text-success" />, bg: "bg-success/10" },
+    { label: "Under Review", value: projects.filter((p) => p.status === "under_review").length, icon: <Clock className="h-5 w-5 text-warning" />, bg: "bg-warning/10" },
+    { label: "Districts Active", value: new Set(projects.map((p) => p.district)).size, icon: <TrendingUp className="h-5 w-5 text-gold-dark" />, bg: "bg-gold/10" },
   ];
 
   return (
