@@ -183,30 +183,29 @@ const Index = () => {
         onSearchChange={setGlobalQuery}
       />
 
-      <main className="mx-auto max-w-7xl px-4 pt-[160px] pb-6">
+      <main className="w-full px-2 pt-[148px] pb-4">
         <StatsBar projects={allProjects} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <aside className="lg:col-span-3 lg:sticky lg:top-[160px] lg:h-fit order-2 lg:order-1">
+        <div className="flex flex-col lg:flex-row gap-2 items-start">
+          <aside className="w-full lg:w-[30%] lg:sticky lg:top-[160px] lg:max-h-[calc(100vh-170px)] lg:overflow-y-auto shrink-0 order-2 lg:order-1 z-30 scrollbar-thin scrollbar-thumb-muted-foreground/20">
             <LiveFlashTicker onOpenProject={handleViewProject} />
           </aside>
 
-          <section className="lg:col-span-9 order-1 lg:order-2">
-            <div className="grid grid-cols-1 xl:grid-cols-9 gap-6 items-start">
-              <div className="xl:col-span-3 lg:sticky lg:top-[170px] lg:h-fit z-30">
-                <FilterPanel
-                  selectedCategories={selectedCategories}
-                  selectedDistricts={selectedDistricts}
-                  categories={categories}
-                  districts={districts}
-                  onCategoriesChange={setSelectedCategories}
-                  onDistrictsChange={setSelectedDistricts}
-                />
-              </div>
+          <div className="w-full lg:w-[25%] lg:sticky lg:top-[160px] lg:max-h-[calc(100vh-170px)] lg:overflow-y-auto z-30 shrink-0 order-3 lg:order-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <FilterPanel
+              selectedCategories={selectedCategories}
+              selectedDistricts={selectedDistricts}
+              categories={categories}
+              districts={districts}
+              onCategoriesChange={setSelectedCategories}
+              onDistrictsChange={setSelectedDistricts}
+            />
+          </div>
 
-              <div className="xl:col-span-6 rounded-xl bg-card border border-border shadow-card overflow-hidden flex flex-col h-[calc(100vh-180px)]">
-                <div className="bg-card px-4 pt-4 pb-4 border-b border-border shadow-sm z-10 shrink-0">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
+          <section className="w-full lg:flex-1 min-w-0 order-1 lg:order-3">
+              <div className="rounded-xl bg-card border border-border shadow-card overflow-hidden flex flex-col h-[calc(100vh-160px)]">
+                <div className="bg-card px-3 pt-3 pb-3 border-b border-border shadow-sm z-10 shrink-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-col">
                       <h2 className="text-lg font-bold text-foreground font-display">Project List</h2>
                       <p className="text-[10px] font-mono text-muted-foreground uppercase opacity-70">
@@ -332,7 +331,6 @@ const Index = () => {
                   )}
                 </div>
               </div>
-            </div>
           </section>
         </div>
       </main>

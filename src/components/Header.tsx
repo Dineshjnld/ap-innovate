@@ -46,7 +46,7 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
   return (
     <header className="fixed inset-x-0 top-0 z-[100]">
       <div className="gradient-navy border-b border-navy-light">
-        <div className="mx-auto grid h-24 max-w-7xl grid-cols-3 items-center px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto grid h-24 max-w-full grid-cols-3 items-center px-4 sm:px-6 lg:px-8">
           <button
             type="button"
             onClick={() => onNavigate("dashboard")}
@@ -74,7 +74,7 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
       </div>
 
       <div className="border-b border-navy-light bg-navy/95 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-14 max-w-full items-center gap-2 px-4 sm:px-6 lg:px-8">
           <Button
             type="button"
             variant="outline"

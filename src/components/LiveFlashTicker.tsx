@@ -52,9 +52,9 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
 
   return (
     <div className="rounded-xl bg-card border border-border shadow-card overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-        <Activity className="h-4 w-4 text-success" />
-        <h2 className="text-sm font-semibold text-foreground">Live Flash Updates</h2>
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
+        <Activity className="h-3.5 w-3.5 text-success" />
+        <h2 className="text-xs font-semibold text-foreground">Live Flash Updates</h2>
       </div>
 
       <div className="relative h-[370px] overflow-hidden">
@@ -72,11 +72,11 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
                 key={`${item.id}-${index}`}
                 type="button"
                 onClick={() => onOpenProject(item.projectId)}
-                className="block h-[74px] w-full border-b border-border/60 px-4 text-left transition-colors hover:bg-muted/40"
+                className="block h-[62px] w-full border-b border-border/60 px-3 text-left transition-colors hover:bg-muted/40"
               >
-                <p className="mb-1 text-xs text-muted-foreground">{item.timestamp}</p>
-                <p className="text-sm leading-snug text-foreground">
-                  <ArrowUp className="mr-1 inline h-3.5 w-3.5 text-gold-dark" />
+                <p className="mb-0.5 text-[10px] text-muted-foreground">{item.timestamp}</p>
+                <p className="text-xs leading-snug text-foreground">
+                  <ArrowUp className="mr-0.5 inline h-3 w-3 text-gold-dark" />
                   <span className="font-semibold">{item.user.rank} {item.user.name}</span> {item.action} {item.projectTitle}
                 </p>
               </button>

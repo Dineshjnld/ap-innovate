@@ -14,10 +14,10 @@ const StatsBar = ({ projects }: StatsBarProps) => {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
       {stats.map((stat) => (
-        <div key={stat.label} className="rounded-xl bg-card border border-border shadow-card px-4 py-3 flex items-center gap-3">
-          <div className={`rounded-lg p-2 ${stat.bg}`}>
+        <div key={stat.label} className="rounded-xl bg-card border border-border shadow-card px-3 py-2 flex items-center gap-2">
+          <div className={`rounded-lg p-1.5 ${stat.bg}`}>
             {stat.icon}
           </div>
           <div>
