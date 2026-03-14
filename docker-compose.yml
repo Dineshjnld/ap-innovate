@@ -7,7 +7,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: ap_innovate
     ports:
       - "5432:5432"
@@ -24,15 +24,19 @@ services:
     container_name: ap-innovate-api
     restart: always
     ports:
-      - "3001:3001"
+      - "80:3001"
     environment:
-      - DATABASE_URL=postgresql://postgres:password@db:5432/ap_innovate
-      - JWT_SECRET=ap-police-innovation-hub-secret-2026
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD:-password}@db:5432/ap_innovate
+      - JWT_SECRET=${JWT_SECRET:-ap-police-innovation-hub-secret-2026}
       - PORT=3001
-      - CORS_ORIGIN=http://localhost:8080
+      - CORS_ORIGIN=*
+      - NODE_ENV=production
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   postgres_data:
+  uploads_data:

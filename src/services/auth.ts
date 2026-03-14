@@ -28,7 +28,7 @@ export interface AuthSession {
 const SESSION_KEY = "apih_auth_session";
 const AUTH_CHANNEL = "apih_auth_channel";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const SESSION_REFRESH_SKEW_MS = 60 * 1000;
 
 class AuthRequestError extends Error {

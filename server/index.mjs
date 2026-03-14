@@ -136,6 +136,12 @@ app.use("/uploads", express.static(UPLOAD_DIR, {
   lastModified: true,
 }));
 
+/* Serve Vite build output in production */
+const DIST_DIR = path.resolve(__dirname, "..", "dist");
+if (fs.existsSync(DIST_DIR)) {
+  app.use(express.static(DIST_DIR, { maxAge: "30d", etag: true }));
+}
+
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
@@ -1626,6 +1632,13 @@ app.get("/api/health", async (_req, res) => {
     return res.status(503).json({ status: "error", db: "disconnected" });
   }
 });
+
+/* SPA fallback — serve index.html for all non-API routes */
+if (fs.existsSync(DIST_DIR)) {
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(DIST_DIR, "index.html"));
+  });
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ERROR HANDLER
