@@ -1,13 +1,27 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { CATEGORIES, DISTRICTS } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Upload, Link as LinkIcon, X } from "lucide-react";
+import { ArrowLeft, Upload, Link as LinkIcon, X, FileText, Loader2 } from "lucide-react";
 import type { CreateProjectInput } from "@/services/database";
+import { uploadFiles } from "@/services/realtime";
+import { toast } from "sonner";
+
+interface UploadedFile {
+  url: string;
+  originalName: string;
+  size: number;
+}
 
 interface CreateProjectFormProps {
   onBack: () => void;
   onSubmit: (input: CreateProjectInput) => Promise<void>;
 }
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
   const [title, setTitle] = useState("");
@@ -18,13 +32,63 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
   const [budget, setBudget] = useState("");
   const [externalLink, setExternalLink] = useState("");
   const [externalLinks, setExternalLinks] = useState<string[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) =>
       prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
     );
+  };
+
+  const handleFileUpload = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const results = await uploadFiles(fileArray);
+      setUploadedFiles((prev) => [...prev, ...results]);
+      toast.success(`${results.length} file${results.length > 1 ? "s" : ""} uploaded successfully`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      void handleFileUpload(e.dataTransfer.files);
+    }
+  }, [handleFileUpload]);
+
+  const removeUploadedFile = (url: string) => {
+    setUploadedFiles((prev) => prev.filter((f) => f.url !== url));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -52,6 +116,7 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
         proposedSolution: solution,
         budget: budget.trim().length > 0 ? Number(budget) : 0,
         externalLinks,
+        attachments: uploadedFiles.map((f) => f.url),
       });
     } finally {
       setIsSubmitting(false);
@@ -184,13 +249,59 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
           {/* Attachments */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Attachments</label>
-            <div className="rounded-lg border-2 border-dashed border-border bg-muted/30 px-6 py-8 text-center">
-              <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+            <div
+              className={`rounded-lg border-2 border-dashed px-6 py-8 text-center cursor-pointer transition-colors ${
+                isDragOver
+                  ? "border-gold bg-gold/10"
+                  : "border-border bg-muted/30 hover:border-gold/50 hover:bg-muted/50"
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.gif,.webp,.svg,.mp4,.webm,.mov"
+                onChange={(e) => {
+                  if (e.target.files) void handleFileUpload(e.target.files);
+                }}
+              />
+              {isUploading ? (
+                <Loader2 className="h-8 w-8 text-gold animate-spin mx-auto mb-2" />
+              ) : (
+                <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              )}
               <p className="text-sm text-muted-foreground">
-                Drag & drop files or click to upload
+                {isUploading ? "Uploading..." : "Drag & drop files or click to upload"}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">PDF, Images, Videos, Documents</p>
+              <p className="text-xs text-muted-foreground mt-1">PDF, Images, Videos, Documents (max 25MB each)</p>
             </div>
+            {uploadedFiles.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {uploadedFiles.map((file) => (
+                  <div
+                    key={file.url}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2"
+                  >
+                    <FileText className="h-4 w-4 text-info shrink-0" />
+                    <span className="text-sm text-foreground truncate flex-1">{file.originalName}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(file.size)}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${file.originalName}`}
+                      className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                      onClick={(e) => { e.stopPropagation(); removeUploadedFile(file.url); }}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* External Links */}

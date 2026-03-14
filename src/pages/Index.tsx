@@ -12,7 +12,6 @@ import {
   subscribeAllProjectsLive,
   subscribeProjectsLive,
 } from "@/services/projectsApi";
-import { seedDatabaseIfEmpty } from "@/services/database";
 import { subscribeDiscoverUsers } from "@/services/realtime";
 
 const Index = () => {
@@ -26,10 +25,6 @@ const Index = () => {
   const [discoverUsers, setDiscoverUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const autoSelectedRef = useRef(false);
-
-  useEffect(() => {
-    seedDatabaseIfEmpty();
-  }, []);
 
   useEffect(() => {
     setIsLoading(true);

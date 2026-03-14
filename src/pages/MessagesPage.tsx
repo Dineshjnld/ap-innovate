@@ -9,14 +9,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
 import type { User as UserType } from "@/data/mockData";
 import type { MessageItem } from "@/services/database";
-import { seedDatabaseIfEmpty } from "@/services/database";
 import {
   markConversationMessagesAsRead,
   sendCurrentUserMessage,
   subscribeCurrentUserMessages,
   subscribeDiscoverUsers,
 } from "@/services/realtime";
-import { getKnownUsers } from "@/services/auth";
 
 const MessagesPage = () => {
   const navigate = useNavigate();
@@ -33,19 +31,7 @@ const MessagesPage = () => {
   const currentUserId = session?.user.id ?? "";
 
   const knownUsers = useMemo(() => {
-    const map = new Map<string, UserType>();
-
-    // Add known users from auth service
-    getKnownUsers().forEach((user) => {
-      map.set(user.id, user);
-    });
-
-    // Add users discovered from API
-    discoverUsers.forEach((user) => {
-      map.set(user.id, user);
-    });
-
-    return Array.from(map.values()).filter((user) => user.id !== currentUserId);
+    return discoverUsers.filter((user) => user.id !== currentUserId);
   }, [discoverUsers, currentUserId]);
 
   const filteredUsers = useMemo(() => {
@@ -67,7 +53,6 @@ const MessagesPage = () => {
   }, [messages, selectedUserId]);
 
   useEffect(() => {
-    seedDatabaseIfEmpty();
     return subscribeCurrentUserMessages((items) => {
       setMessages(items);
     });

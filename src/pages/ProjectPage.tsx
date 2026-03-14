@@ -6,7 +6,7 @@ import ProjectDiscussion from "@/components/ProjectDiscussion";
 import ProjectApproval from "@/components/ProjectApproval";
 import type { DiscussionComment, Project } from "@/data/mockData";
 import { createComment, subscribeProjectComments } from "@/services/realtime";
-import { seedDatabaseIfEmpty, subscribeProjectById } from "@/services/database";
+import { subscribeProjectById } from "@/services/database";
 import { socketService } from "@/services/socket";
 
 const ProjectPage = () => {
@@ -16,10 +16,6 @@ const ProjectPage = () => {
   const [comments, setComments] = useState<DiscussionComment[]>([]);
 
   const projectId = useMemo(() => params.projectId ?? "", [params.projectId]);
-
-  useEffect(() => {
-    seedDatabaseIfEmpty();
-  }, []);
 
   useEffect(() => {
     if (!projectId) {

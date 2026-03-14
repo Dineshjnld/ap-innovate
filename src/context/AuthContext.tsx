@@ -14,6 +14,7 @@ import {
   type SignUpInput,
 } from "@/services/auth";
 import { AuthContext, type AuthContextValue } from "@/context/auth-context";
+import { socketService } from "@/services/socket";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<AuthSession | null>(getSession);
@@ -48,8 +49,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         })
         .catch((err) => {
           console.error("Hydration error:", err);
-          // If fallback is enabled, we don't clear session if it persists, 
-          // but we ensure loading is finished.
         })
         .finally(() => {
           clearTimeout(timeout);
@@ -70,9 +69,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Proactive token refresh every 60 s (only when we have an API-backed session)
   useEffect(() => {
-    const token = session?.token ?? "";
-    // Skip refresh polling for local-only tokens
-    if (!session?.refreshToken || token.startsWith("local-")) {
+    if (!session?.refreshToken) {
       return;
     }
 
@@ -84,6 +81,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       window.clearInterval(timer);
     };
   }, [session?.refreshToken, session?.token]);
+
+  // Connect/authenticate socket when user session exists
+  useEffect(() => {
+    if (session?.user?.id) {
+      socketService.connect(session.user.id);
+    } else {
+      socketService.disconnect();
+    }
+  }, [session?.user?.id]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -100,6 +106,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       },
       signOut: () => {
         signOutRequest();
+        socketService.disconnect();
         setSession(null);
       },
       updateProfile: (updates) => {

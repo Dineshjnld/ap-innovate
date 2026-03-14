@@ -10,17 +10,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { DISTRICTS, type User } from "@/data/mockData";
 import { useAuth } from "@/hooks/use-auth";
-import { seedDatabaseIfEmpty } from "@/services/database";
-import { subscribeCurrentUserProfile, updateCurrentUserProfile } from "@/services/realtime";
 import {
-  getConnectionCount,
-  getFollowerCount,
-  getRelationshipState,
-  requestConnection,
-  respondConnectionRequest,
+  subscribeCurrentUserProfile,
+  updateCurrentUserProfile,
+  fetchUserById,
   toggleFollowUser,
-} from "@/services/auth";
-import { fetchUserById } from "@/services/realtime";
+  getFollowerInfo,
+  requestConnection,
+  getConnectionStatus,
+  getConnectionsCount,
+} from "@/services/realtime";
 
 const ProfilePage = () => {
   const navigate = useNavigate();
@@ -40,6 +39,8 @@ const ProfilePage = () => {
   const [editBio, setEditBio] = useState("");
   const [isFollowing, setIsFollowing] = useState(false);
   const [connectionState, setConnectionState] = useState<"none" | "requested" | "incoming-request" | "connected">("none");
+  const [followersCount, setFollowersCount] = useState(0);
+  const [connectionCount, setConnectionCount] = useState(0);
 
   useEffect(() => {
     if (session?.user && isOwnProfile) {
@@ -57,9 +58,18 @@ const ProfilePage = () => {
         setProfile(target);
       });
 
-      const relation = getRelationshipState(userId);
-      setIsFollowing(relation.isFollowing);
-      setConnectionState(relation.connection);
+      void getFollowerInfo(userId).then((info) => {
+        setFollowersCount(info.count);
+        setIsFollowing(info.isFollowing);
+      }).catch(() => {});
+
+      void getConnectionStatus(userId).then((res) => {
+        setConnectionState(res.status as typeof connectionState);
+      }).catch(() => {});
+
+      void getConnectionsCount(userId).then((res) => {
+        setConnectionCount(res.count);
+      }).catch(() => {});
     }
   }, [isOwnProfile, userId, session]);
 
@@ -68,13 +78,19 @@ const ProfilePage = () => {
       return;
     }
 
-    seedDatabaseIfEmpty();
     return subscribeCurrentUserProfile((user) => {
       if (user) {
         setProfile(user);
       }
     });
   }, [isOwnProfile]);
+
+  // Load own profile follower/connection counts
+  useEffect(() => {
+    if (!isOwnProfile || !session?.user?.id) return;
+    void getFollowerInfo(session.user.id).then((info) => setFollowersCount(info.count)).catch(() => {});
+    void getConnectionsCount(session.user.id).then((res) => setConnectionCount(res.count)).catch(() => {});
+  }, [isOwnProfile, session?.user?.id]);
 
   useEffect(() => {
     if (!profile) {
@@ -143,38 +159,45 @@ const ProfilePage = () => {
     toast.success("Profile updated");
   };
 
-  const onFollowToggle = () => {
+  const onFollowToggle = async () => {
     if (!profile) {
       return;
     }
 
-    const nextFollowing = toggleFollowUser(profile.id);
-    setIsFollowing(nextFollowing);
-    toast.success(nextFollowing ? `You are now following ${profile.name}` : `Unfollowed ${profile.name}`);
+    try {
+      const result = await toggleFollowUser(profile.id);
+      setIsFollowing(result.following);
+      toast.success(result.following ? `You are now following ${profile.name}` : `Unfollowed ${profile.name}`);
+      // Refresh follower count
+      const info = await getFollowerInfo(profile.id);
+      setFollowersCount(info.count);
+    } catch {
+      toast.error("Failed to update follow status");
+    }
   };
 
-  const onConnectionAction = () => {
+  const onConnectionAction = async () => {
     if (!profile) {
       return;
     }
 
-    if (connectionState === "incoming-request") {
-      const next = respondConnectionRequest(profile.id, true);
-      setConnectionState(next);
-      toast.success(`You are now connected with ${profile.name}`);
-      return;
-    }
+    try {
+      const result = await requestConnection(profile.id);
+      const status = result.status as typeof connectionState;
+      setConnectionState(status);
 
-    const next = requestConnection(profile.id);
-    setConnectionState(next);
+      if (status === "connected") {
+        toast.success(`You are now connected with ${profile.name}`);
+        const res = await getConnectionsCount(profile.id);
+        setConnectionCount(res.count);
+        return;
+      }
 
-    if (next === "connected") {
-      toast.success(`You are now connected with ${profile.name}`);
-      return;
-    }
-
-    if (next === "requested") {
-      toast.success(`Connection request sent to ${profile.name}`);
+      if (status === "requested") {
+        toast.success(`Connection request sent to ${profile.name}`);
+      }
+    } catch {
+      toast.error("Failed to send connection request");
     }
   };
 
@@ -185,18 +208,6 @@ const ProfilePage = () => {
       .join("")
       .slice(0, 2)
       .toUpperCase() ?? "AP";
-
-  const followersCount = profile
-    ? isOwnProfile
-      ? Math.max(profile.connectionsCount + profile.innovationsCount * 3, profile.connectionsCount)
-      : Math.max(getFollowerCount(profile.id), profile.connectionsCount)
-    : 0;
-
-  const connectionCount = profile
-    ? isOwnProfile
-      ? profile.connectionsCount
-      : Math.max(getConnectionCount(profile.id), profile.connectionsCount)
-    : 0;
 
   const joinedLabel = "March 2026";
 
@@ -263,13 +274,13 @@ const ProfilePage = () => {
                     ) : null}
                     {!isOwnProfile ? (
                       <>
-                        <Button type="button" variant={isFollowing ? "outline" : "default"} onClick={onFollowToggle}>
+                        <Button type="button" variant={isFollowing ? "outline" : "default"} onClick={() => void onFollowToggle()}>
                           {isFollowing ? "Following" : "Follow"}
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={onConnectionAction}
+                          onClick={() => void onConnectionAction()}
                           disabled={connectionState === "requested" || connectionState === "connected"}
                         >
                           {connectionState === "connected"

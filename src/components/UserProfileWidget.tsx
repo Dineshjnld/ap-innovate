@@ -1,8 +1,11 @@
 import { User as UserIcon, Award, Users } from "lucide-react";
-import { MOCK_CURRENT_USER } from "@/data/mockData";
+import { useAuth } from "@/hooks/use-auth";
 
 const UserProfileWidget = () => {
-  const user = MOCK_CURRENT_USER;
+  const { session } = useAuth();
+  const user = session?.user;
+
+  if (!user) return null;
 
   return (
     <div className="rounded-xl bg-card shadow-card border border-border overflow-hidden">

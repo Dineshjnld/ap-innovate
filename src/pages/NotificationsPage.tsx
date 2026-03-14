@@ -13,9 +13,7 @@ import {
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getKnownUserById } from "@/services/auth";
 import type { NotificationItem } from "@/services/database";
-import { seedDatabaseIfEmpty } from "@/services/database";
 import {
   markAllNotificationsAsRead,
   subscribeCurrentUserNotifications,
@@ -29,7 +27,6 @@ const NotificationsPage = () => {
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread'>('all');
 
   useEffect(() => {
-    seedDatabaseIfEmpty();
     return subscribeCurrentUserNotifications((items) => {
       setNotifications(items);
     });

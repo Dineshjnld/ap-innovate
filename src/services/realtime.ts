@@ -14,6 +14,13 @@ import {
   updateCurrentUserProfile,
   clearAllNotifications,
   deleteNotificationById,
+  toggleFollowUser,
+  getFollowerInfo,
+  requestConnection,
+  getConnectionStatus,
+  getConnectionsCount,
+  uploadFiles,
+  fetchStats,
 } from "@/services/database";
 
 export {
@@ -32,4 +39,11 @@ export {
   updateCurrentUserProfile,
   clearAllNotifications,
   deleteNotificationById,
+  toggleFollowUser,
+  getFollowerInfo,
+  requestConnection,
+  getConnectionStatus,
+  getConnectionsCount,
+  uploadFiles,
+  fetchStats,
 };

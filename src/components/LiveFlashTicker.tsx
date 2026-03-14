@@ -45,12 +45,8 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
   const hasItems = streamItems.length > 0;
   const tickerSpeedClass = useMemo(() => {
     const count = Math.max(1, items.slice(-MAX_STREAM_ITEMS).length);
-    if (count >= 10) {
-      return "live-flash-speed-fast";
-    }
-    if (count >= 6) {
-      return "live-flash-speed-mid";
-    }
+    if (count >= 10) return "live-flash-speed-fast";
+    if (count >= 6) return "live-flash-speed-mid";
     return "live-flash-speed-slow";
   }, [items]);
 
