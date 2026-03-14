@@ -95,7 +95,7 @@ const FilterPanel = ({
                 All
               </label>
 
-              <div className="max-h-[200px] overflow-y-auto space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="space-y-0.5">
                 {categories.map((cat) => (
                   <label
                     key={cat}
@@ -141,7 +141,7 @@ const FilterPanel = ({
                 All
               </label>
 
-              <div className="max-h-[200px] overflow-y-auto space-y-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="space-y-0.5">
                 {districts.map((dist) => (
                   <label
                     key={dist}

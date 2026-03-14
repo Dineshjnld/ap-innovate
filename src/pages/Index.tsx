@@ -183,15 +183,15 @@ const Index = () => {
         onSearchChange={setGlobalQuery}
       />
 
-      <main className="w-full px-2 pt-[148px] pb-4">
+      <main className="w-full px-2 pt-[136px] pb-4">
         <StatsBar projects={allProjects} />
 
         <div className="flex flex-col lg:flex-row gap-2 items-start">
-          <aside className="w-full lg:w-[30%] lg:sticky lg:top-[160px] lg:max-h-[calc(100vh-170px)] lg:overflow-y-auto shrink-0 order-2 lg:order-1 z-30 scrollbar-thin scrollbar-thumb-muted-foreground/20">
+          <aside className="w-full lg:w-[30%] lg:sticky lg:top-[136px] lg:max-h-[calc(100vh-145px)] lg:overflow-y-auto shrink-0 order-2 lg:order-1 z-30 scrollbar-thin scrollbar-thumb-muted-foreground/20">
             <LiveFlashTicker onOpenProject={handleViewProject} />
           </aside>
 
-          <div className="w-full lg:w-[25%] lg:sticky lg:top-[160px] lg:max-h-[calc(100vh-170px)] lg:overflow-y-auto z-30 shrink-0 order-3 lg:order-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="w-full lg:w-[25%] lg:sticky lg:top-[136px] lg:max-h-[calc(100vh-145px)] lg:overflow-y-auto z-30 shrink-0 order-3 lg:order-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <FilterPanel
               selectedCategories={selectedCategories}
               selectedDistricts={selectedDistricts}
@@ -203,7 +203,7 @@ const Index = () => {
           </div>
 
           <section className="w-full lg:flex-1 min-w-0 order-1 lg:order-3">
-              <div className="rounded-xl bg-card border border-border shadow-card overflow-hidden flex flex-col h-[calc(100vh-160px)]">
+              <div className="rounded-xl bg-card border border-border shadow-card overflow-hidden flex flex-col h-[calc(100vh-145px)]">
                 <div className="bg-card px-3 pt-3 pb-3 border-b border-border shadow-sm z-10 shrink-0">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-col">
@@ -218,7 +218,7 @@ const Index = () => {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40">
+                <div className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40">
                   {normalizedGlobalQuery ? (
                     <div className="mb-4 rounded-lg border border-border bg-muted/20 p-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Global Search Results</p>
