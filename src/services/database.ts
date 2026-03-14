@@ -44,7 +44,7 @@ export interface NotificationItem {
 
 type Unsubscribe = () => void;
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 const POLL_INTERVAL_MS = Number(import.meta.env.VITE_REALTIME_POLL_MS ?? "4000");
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */

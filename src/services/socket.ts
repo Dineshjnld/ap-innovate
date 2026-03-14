@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 
 type Callback = (...args: unknown[]) => void;
 
