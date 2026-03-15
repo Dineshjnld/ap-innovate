@@ -29,7 +29,6 @@ const { Pool } = pg;
 
 const PORT = Number(process.env.PORT ?? 3001);
 const JWT_SECRET = process.env.JWT_SECRET ?? "change-this-in-production";
-const TRUST_PROXY = process.env.TRUST_PROXY ?? "loopback";
 const DATABASE_URL = process.env.DATABASE_URL;
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*";
 const ACCESS_TOKEN_TTL_SECONDS = Number(process.env.ACCESS_TOKEN_TTL_SECONDS ?? "900");
@@ -61,8 +60,6 @@ process.on("uncaughtException", (err) => {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const app = express();
-app.set("trust proxy", TRUST_PROXY);
-app.disable("x-powered-by");
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -78,26 +75,11 @@ const socketUserMap = new Map();
 const onlineUsers = new Map(); // userId -> { socketIds: Set, lastSeen: null }
 const lastSeenMap = new Map(); // userId -> timestamp (when they go offline)
 
-io.use((socket, next) => {
-  const token = socket.handshake.auth?.token;
-  if (!token) return next();
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    if (payload?.typ === "access" && payload?.sub) {
-      socket.userId = payload.sub;
-    }
-  } catch {}
-  next();
-});
-
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
   socket.on("authenticate", (userId) => {
     if (userId && typeof userId === "string") {
-      if (socket.userId && socket.userId !== userId) {
-        return;
-      }
       socketUserMap.set(socket.id, userId);
       socket.join(`user:${userId}`);
 
@@ -171,71 +153,24 @@ io.on("connection", (socket) => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SECURITY MIDDLEWARE
+   MIDDLEWARE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Request ID for audit trail ────────────────────────────────────── */
-app.use((req, _res, next) => {
-  req.id = req.headers["x-request-id"] || randomUUID();
-  next();
-});
-
-/* ── Helmet — comprehensive HTTP security headers ─────────────────── */
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
-      imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", "ws:", "wss:"],
-      frameSrc: ["'none'"],
-      objectSrc: ["'none'"],
-      baseUri: ["'self'"],
-      formAction: ["'self'"],
-      frameAncestors: ["'none'"],
-      upgradeInsecureRequests: [],
-    },
-  },
-  strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true, preload: true },
-  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
-  xContentTypeOptions: true,
-  xFrameOptions: { action: "deny" },
+  contentSecurityPolicy: false,
 }));
-
-/* ── Additional security headers not covered by Helmet ────────────── */
-app.use((_req, res, next) => {
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
-  res.removeHeader("X-Powered-By");
-  next();
-});
-
 app.use(compression());
 app.use(cors({
   origin: CORS_ORIGIN === "*" ? true : CORS_ORIGIN.split(",").map(s => s.trim()),
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
-  maxAge: 86400,
 }));
 app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
-/* ── Upload serving with security hardening ────────────────────────── */
-app.use("/uploads", (_req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Content-Disposition", "inline");
-  res.setHeader("Cache-Control", "public, max-age=604800, immutable");
-  next();
-}, express.static(UPLOAD_DIR, {
+app.use("/uploads", express.static(UPLOAD_DIR, {
   maxAge: "7d",
   etag: true,
   lastModified: true,
-  dotfiles: "deny",
-  index: false,
 }));
 
 /* Serve Vite build output in production */
@@ -255,31 +190,12 @@ app.use("/api/", globalLimiter);
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many authentication attempts, please try again later." },
 });
 app.use("/api/auth/", authLimiter);
-
-const signupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: "Too many signup attempts. Try again later." },
-});
-app.use("/api/auth/signup", signupLimiter);
-
-const uploadLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: "Too many file uploads. Slow down." },
-});
-app.use("/api/upload", uploadLimiter);
-app.use("/api/users/me/avatar", uploadLimiter);
 
 /* ═══════════════════════════════════════════════════════════════════════════
    FILE UPLOAD CONFIG (MULTER)
@@ -520,23 +436,6 @@ const initDb = async (retries = 3) => {
     );
   `);
 
-  // ── Security audit log (government compliance) ───────────────────────
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id TEXT PRIMARY KEY,
-      event TEXT NOT NULL,
-      user_id TEXT,
-      email TEXT,
-      ip TEXT,
-      user_agent TEXT,
-      details TEXT,
-      created_at BIGINT NOT NULL
-    );
-  `);
-  await pool.query("CREATE INDEX IF NOT EXISTS idx_audit_logs_event ON audit_logs(event)").catch(() => {});
-  await pool.query("CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id)").catch(() => {});
-  await pool.query("CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC)").catch(() => {});
-
   // ── Project versions table (edit history) ────────────────────────────
   await pool.query(`
     CREATE TABLE IF NOT EXISTS project_versions (
@@ -712,7 +611,7 @@ const hashToken = (v) => createHash("sha256").update(v).digest("hex");
 
 const isValidEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const isStrongPassword = (v) =>
-  v.length >= 8 && /[A-Z]/.test(v) && /[a-z]/.test(v) && /[0-9]/.test(v) && /[^A-Za-z0-9]/.test(v);
+  v.length >= 8 && /[A-Z]/.test(v) && /[a-z]/.test(v) && /[0-9]/.test(v);
 
 const sanitizeText = (text) => {
   if (typeof text !== "string") return "";
@@ -931,25 +830,6 @@ const createActivity = async (userId, action, projectTitle, projectId) => {
   }
 };
 
-/* ── Security audit logger (government compliance) ───────────────────── */
-const logAuditEvent = async (event, { userId = null, email = null, ip = null, userAgent = null, details = null } = {}) => {
-  try {
-    await pool.query(
-      `INSERT INTO audit_logs (id, event, user_id, email, ip, user_agent, details, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [makeId("audit"), event, userId, email, ip, userAgent, details, Date.now()],
-    );
-  } catch (err) {
-    console.error("Audit log failed:", err.message);
-  }
-};
-
-const getClientIp = (req) => {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) return String(forwarded).split(",")[0].trim();
-  return req.ip || req.socket?.remoteAddress || "unknown";
-};
-
 const makeUniqueSlug = async (title) => {
   const base = title
     .toLowerCase()
@@ -988,7 +868,7 @@ app.post("/api/auth/signup", async (req, res, next) => {
     }
     if (!isStrongPassword(password)) {
       return res.status(400).json({
-        message: "Password must be at least 8 characters with uppercase, lowercase, a number, and a special character",
+        message: "Password must be at least 8 characters with uppercase, lowercase, and a number",
       });
     }
 
@@ -1009,7 +889,6 @@ app.post("/api/auth/signup", async (req, res, next) => {
 
     const row = await findUserById(id);
     const session = await issueAuthSession(id);
-    void logAuditEvent("SIGNUP", { userId: id, email, ip: getClientIp(req), userAgent: req.headers["user-agent"] });
     return res.status(201).json({ ...session, user: toAuthUser(row) });
   } catch (err) {
     next(err);
@@ -1040,14 +919,12 @@ app.post("/api/auth/signin", async (req, res, next) => {
     const row = await findUserByEmail(email);
     if (!row) {
       await registerFailedSignIn(email);
-      void logAuditEvent("SIGNIN_FAIL", { email, ip: getClientIp(req), userAgent: req.headers["user-agent"], details: "User not found" });
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const valid = await bcrypt.compare(password, row.password_hash);
     if (!valid) {
       const status = await registerFailedSignIn(email);
-      void logAuditEvent("SIGNIN_FAIL", { userId: row.id, email, ip: getClientIp(req), userAgent: req.headers["user-agent"], details: status.lockUntil ? "Account locked" : "Wrong password" });
       if (status.lockUntil && status.lockUntil > now) {
         return res.status(429).json({
           message: "Too many failed sign-in attempts. Try again later.",
@@ -1059,7 +936,6 @@ app.post("/api/auth/signin", async (req, res, next) => {
 
     await clearLoginAttempt(email);
     const session = await issueAuthSession(row.id);
-    void logAuditEvent("SIGNIN_OK", { userId: row.id, email, ip: getClientIp(req), userAgent: req.headers["user-agent"] });
     return res.json({ ...session, user: toAuthUser(row) });
   } catch (err) {
     next(err);
@@ -1122,11 +998,9 @@ app.post("/api/auth/refresh", async (req, res, next) => {
 
 app.post("/api/auth/signout", async (req, res) => {
   const refreshToken = String(req.body?.refreshToken ?? "").trim();
-  const userId = getUserFromToken(req);
   if (refreshToken) {
     await revokeRefreshToken(refreshToken).catch(() => {});
   }
-  void logAuditEvent("SIGNOUT", { userId, ip: getClientIp(req) });
   return res.json({ ok: true });
 });
 
@@ -1614,12 +1488,6 @@ app.put("/api/projects/:projectId/status", requireAuth, async (req, res, next) =
     io.emit("project-updated", updatedProject);
     io.to(`project:${projectId}`).emit("project-status-changed", updatedProject);
 
-    void logAuditEvent("PROJECT_STATUS_CHANGE", {
-      userId: req.userId,
-      ip: getClientIp(req),
-      details: `Project ${projectId} "${updatedRow.title}" → ${status} by ${approver.name} (${approver.rank})`,
-    });
-
     return res.json(updatedProject);
   } catch (err) {
     next(err);
@@ -1787,11 +1655,6 @@ app.put("/api/admin/users/:userId/role", requireAuth, requireAdmin, async (req, 
     if (!["user", "admin"].includes(role)) return res.status(400).json({ message: "Invalid role" });
     await pool.query("UPDATE users SET role = $1 WHERE id = $2", [role, req.params.userId]);
     const updated = await findUserById(req.params.userId);
-    void logAuditEvent("ADMIN_ROLE_CHANGE", {
-      userId: req.userId,
-      ip: getClientIp(req),
-      details: `Changed user ${req.params.userId} role to ${role}`,
-    });
     return res.json(toAuthUser(updated));
   } catch (err) {
     next(err);
@@ -1813,34 +1676,6 @@ app.get("/api/admin/stats", requireAuth, requireAdmin, async (req, res, next) =>
       totalComments: Number(comments.rows[0].count),
       pendingReview: Number(pending.rows[0].count),
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ADMIN: view security audit logs
-app.get("/api/admin/audit-logs", requireAuth, requireAdmin, async (req, res, next) => {
-  try {
-    const limit = Math.min(Number(req.query.limit) || 100, 500);
-    const event = req.query.event ? String(req.query.event) : null;
-    const params = [];
-    let sql = "SELECT * FROM audit_logs";
-    if (event) {
-      params.push(event);
-      sql += ` WHERE event = $${params.length}`;
-    }
-    sql += " ORDER BY created_at DESC LIMIT " + limit;
-    const result = await pool.query(sql, params);
-    return res.json(result.rows.map(r => ({
-      id: r.id,
-      event: r.event,
-      userId: r.user_id,
-      email: r.email,
-      ip: r.ip,
-      userAgent: r.user_agent,
-      details: r.details,
-      createdAt: Number(r.created_at),
-    })));
   } catch (err) {
     next(err);
   }
@@ -2147,7 +1982,7 @@ if (fs.existsSync(DIST_DIR)) {
 app.use((error, _req, res, _next) => {
   console.error("Unhandled error:", error.message);
   if (error.stack) console.error(error.stack);
-  return res.status(500).json({ message: "An unexpected error occurred. Please try again." });
+  return res.status(500).json({ message: "Internal server error" });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2156,30 +1991,11 @@ app.use((error, _req, res, _next) => {
 
 initDb()
   .then(() => {
-    /* ── Security warnings ───────────────────────────────────────────── */
-    const WEAK_SECRETS = ["change-this-in-production", "secret", "jwt-secret", "test"];
-    if (WEAK_SECRETS.includes(JWT_SECRET) || JWT_SECRET.length < 32) {
-      console.warn("⚠️  WARNING: JWT_SECRET is weak. Generate a strong random secret for production!");
-      console.warn("   Run: node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"");
-    }
-    if (CORS_ORIGIN === "*") {
-      console.warn("⚠️  WARNING: CORS_ORIGIN is set to '*'. Restrict it to your domain in production.");
-    }
-
-    /* ── Periodic cleanup: audit logs older than 90 days ────────────── */
-    setInterval(async () => {
-      try {
-        const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
-        await pool.query("DELETE FROM audit_logs WHERE created_at < $1", [cutoff]);
-      } catch {}
-    }, 24 * 60 * 60 * 1000);
-
     httpServer.listen(PORT, () => {
       console.log(`Production API running on http://localhost:${PORT}`);
       console.log(`  Upload dir: ${UPLOAD_DIR}`);
       console.log(`  CORS: ${CORS_ORIGIN}`);
       console.log(`  Max file size: ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB`);
-      console.log(`  Security: Helmet CSP + HSTS + Rate limiting + Audit logging`);
     });
   })
   .catch((err) => {
