@@ -1,5 +1,6 @@
-import { User as UserIcon, Award, Users } from "lucide-react";
+import { Award, Users } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const UserProfileWidget = () => {
   const { session } = useAuth();
@@ -12,9 +13,12 @@ const UserProfileWidget = () => {
       {/* Banner */}
       <div className="gradient-navy h-20 relative">
         <div className="absolute -bottom-8 left-4">
-          <div className="h-16 w-16 rounded-full bg-gold flex items-center justify-center border-4 border-card shadow-md">
-            <UserIcon className="h-7 w-7 text-navy-dark" />
-          </div>
+          <Avatar className="h-16 w-16 border-4 border-card shadow-md">
+            <AvatarImage src={user.avatar} alt={user.name} />
+            <AvatarFallback className="bg-gold text-navy-dark text-lg font-bold">
+              {user.name.charAt(0)}
+            </AvatarFallback>
+          </Avatar>
         </div>
       </div>
 

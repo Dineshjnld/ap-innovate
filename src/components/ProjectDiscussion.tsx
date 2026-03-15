@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, useRef } from "react";
-import { MessageSquareReply, Send, AtSign, User } from "lucide-react";
+import { MessageSquareReply, Send, AtSign, User, Reply, ChevronDown, ChevronRight, Clock } from "lucide-react";
 import type { DiscussionComment, User as UserType } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,49 +14,49 @@ interface DiscussionNode extends DiscussionComment {
   children: DiscussionNode[];
 }
 
-const depthClass = (depth: number) => {
-  if (depth <= 0) return "ml-0";
-  if (depth === 1) return "ml-4 md:ml-8 border-l-2 border-muted pl-4 md:pl-6";
-  if (depth === 2) return "ml-4 md:ml-12 border-l-2 border-muted pl-4 md:pl-6";
-  if (depth >= 3) return "ml-4 md:ml-16 border-l-2 border-muted pl-4 md:pl-6";
-  return "ml-0";
-};
-
 const buildTree = (comments: DiscussionComment[]) => {
   const map = new Map<string, DiscussionNode>();
-
-  comments.forEach((comment) => {
-    map.set(comment.id, { ...comment, children: [] });
-  });
-
+  comments.forEach((c) => map.set(c.id, { ...c, children: [] }));
   const roots: DiscussionNode[] = [];
-
   map.forEach((node) => {
-    if (!node.parentId) {
-      roots.push(node);
-      return;
-    }
-
+    if (!node.parentId) { roots.push(node); return; }
     const parent = map.get(node.parentId);
-    if (parent) {
-      parent.children.push(node);
-      return;
-    }
-
-    roots.push(node);
+    if (parent) parent.children.push(node);
+    else roots.push(node);
   });
-
   return roots;
 };
 
-const CommentComposer = ({
+/* ────────────────────────────────────────────────────────────────────
+   Time helpers
+   ──────────────────────────────────────────────────────────────────── */
+
+const timeAgo = (dateStr: string) => {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+};
+
+/* ────────────────────────────────────────────────────────────────────
+   CompactComposer — slim inline composer
+   ──────────────────────────────────────────────────────────────────── */
+
+const CompactComposer = ({
   onSubmit,
   placeholder,
   autoFocus,
+  onCancel,
 }: {
   onSubmit: (value: string) => void;
   placeholder: string;
   autoFocus?: boolean;
+  onCancel?: () => void;
 }) => {
   const [value, setValue] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -73,7 +73,6 @@ const CommentComposer = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     setValue(newValue);
-
     const lastChar = newValue[e.target.selectionStart - 1];
     if (lastChar === "@") {
       setShowMentions(true);
@@ -81,21 +80,18 @@ const CommentComposer = ({
     } else if (showMentions) {
       const parts = newValue.slice(0, e.target.selectionStart).split("@");
       const query = parts[parts.length - 1];
-      if (query.includes(" ")) {
-        setShowMentions(false);
-      } else {
-        setMentionQuery(query);
-      }
+      if (query.includes(" ")) setShowMentions(false);
+      else setMentionQuery(query);
     }
   };
 
   const handleMentionSelect = (user: UserType) => {
-    const parts = value.slice(0, textareaRef.current?.selectionStart).split("@");
+    const pos = textareaRef.current?.selectionStart ?? value.length;
+    const parts = value.slice(0, pos).split("@");
     parts.pop();
     const prefix = parts.join("@");
-    const suffix = value.slice(textareaRef.current?.selectionStart);
-    const newValue = `${prefix}@${user.name} ${suffix}`;
-    setValue(newValue);
+    const suffix = value.slice(pos);
+    setValue(`${prefix}@${user.name} ${suffix}`);
     setShowMentions(false);
     textareaRef.current?.focus();
   };
@@ -103,54 +99,80 @@ const CommentComposer = ({
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     const content = value.trim();
-    if (content.length === 0) {
-      return;
-    }
-
+    if (!content) return;
     onSubmit(content);
     setValue("");
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+    if (e.key === "Escape" && onCancel) {
+      onCancel();
+    }
+  };
+
   return (
-    <div className="relative space-y-2">
-      <form onSubmit={handleSubmit} className="relative rounded-xl border border-border bg-background shadow-sm transition-all focus-within:ring-2 focus-within:ring-gold/20">
+    <div className="relative">
+      <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-background shadow-sm focus-within:ring-1 focus-within:ring-primary/30 transition-all">
         <textarea
           ref={textareaRef}
           value={value}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          rows={3}
+          rows={1}
           autoFocus={autoFocus}
-          className="w-full resize-none rounded-t-xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
+          className="w-full resize-none bg-transparent px-3 py-2 text-xs outline-none placeholder:text-muted-foreground/60"
         />
-        <div className="flex items-center justify-between border-t border-border px-3 py-2 bg-muted/30 rounded-b-xl">
-          <div className="flex gap-2 text-muted-foreground">
-            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 hover:text-gold" onClick={() => setShowMentions(true)}>
-              <AtSign className="h-4 w-4" />
+        <div className="flex items-center justify-between px-2 py-1.5 border-t border-border/50 bg-muted/20 rounded-b-lg">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowMentions(true)}
+              className="rounded p-1 text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+              title="Mention someone"
+            >
+              <AtSign className="h-3.5 w-3.5" />
+            </button>
+            <span className="text-[9px] text-muted-foreground/50 hidden sm:inline">Ctrl+Enter to send</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {onCancel && (
+              <Button type="button" variant="ghost" size="sm" onClick={onCancel} className="h-6 text-[10px] px-2">
+                Cancel
+              </Button>
+            )}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!value.trim()}
+              className="h-6 text-[10px] px-2.5 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+            >
+              <Send className="h-3 w-3 mr-1" /> Send
             </Button>
           </div>
-          <Button type="submit" size="sm" className="bg-navy text-white hover:bg-navy-light shadow-md transition-all active:scale-95">
-            <Send className="h-3.5 w-3.5 mr-1.5" />
-            Post
-          </Button>
         </div>
       </form>
 
       {showMentions && users.length > 0 && (
-        <div className="absolute top-full left-0 z-50 mt-1 w-64 max-h-48 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg animate-in fade-in slide-in-from-top-2">
+        <div className="absolute bottom-full left-0 z-50 mb-1 w-56 max-h-40 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
           {users.map((user) => (
             <button
               key={user.id}
               type="button"
               onClick={() => handleMentionSelect(user)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/80 transition-colors"
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted transition-colors"
             >
-              <Avatar className="h-6 w-6">
-                <AvatarFallback className="text-[10px]">{user.name[0]}</AvatarFallback>
+              <Avatar className="h-5 w-5">
+                <AvatarImage src={user.avatar} />
+                <AvatarFallback className="text-[8px] bg-primary/10">{user.name[0]}</AvatarFallback>
               </Avatar>
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground">{user.name}</span>
-                <span className="text-[10px] text-muted-foreground">{user.rank}, {user.district}</span>
+              <div className="min-w-0">
+                <span className="font-medium text-foreground truncate block">{user.name}</span>
+                <span className="text-[9px] text-muted-foreground">{user.rank}</span>
               </div>
             </button>
           ))}
@@ -160,143 +182,202 @@ const CommentComposer = ({
   );
 };
 
-const CommentThread = ({
+/* ────────────────────────────────────────────────────────────────────
+   CommentBubble — single comment with inline reply
+   ──────────────────────────────────────────────────────────────────── */
+
+const CommentBubble = ({
   node,
   depth,
   onReply,
 }: {
   node: DiscussionNode;
   depth: number;
-  onReply: (content: string, parentId: string) => void;
+  onReply: (parentId: string, authorName: string) => void;
 }) => {
-  const [isReplying, setIsReplying] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const formattedContent = useMemo(() => {
     if (!node.content) return null;
-    // Basic mention highlighting
-    const mentionRegex = /(@[a-zA-Z\s]+)/g;
+    const mentionRegex = /(@[a-zA-Z\s]+?)(?=\s|$|@)/g;
     return node.content.split(mentionRegex).map((part, i) => {
       if (part.startsWith("@")) {
-        return <span key={i} className="font-semibold text-navy hover:underline cursor-pointer">{part}</span>;
+        return <span key={i} className="font-semibold text-primary cursor-pointer hover:underline">{part}</span>;
       }
       return part;
     });
   }, [node.content]);
 
-  if (!node.author) {
-    return null;
-  }
+  if (!node.author) return null;
+
+  const hasReplies = node.children && node.children.length > 0;
+  const indentPx = Math.min(depth * 12, 36);
 
   return (
-    <div className="group space-y-3">
-      <div className={`relative flex gap-3 ${depthClass(depth)} transition-all`}>
-        <Avatar className="h-8 w-8 mt-1 border border-border shadow-sm shrink-0">
-          <AvatarImage src={node.author.avatar} />
-          <AvatarFallback className="bg-navy-light text-white text-xs">
-            {node.author.name ? node.author.name[0] : "?"}
-          </AvatarFallback>
-        </Avatar>
+    <div style={{ marginLeft: depth > 0 ? indentPx : 0 }}>
+      {/* Thread line connector */}
+      <div className={`relative ${depth > 0 ? "border-l border-muted/50 pl-2" : ""}`}>
+        {/* Comment */}
+        <div className="group py-0.5">
+          <div className="flex items-start gap-1.5">
+            <Avatar className="h-5 w-5 shrink-0 mt-0.5">
+              <AvatarImage src={node.author.avatar} />
+              <AvatarFallback className="text-[8px] bg-primary/10 text-primary font-bold">
+                {node.author.name?.[0] ?? "?"}
+              </AvatarFallback>
+            </Avatar>
 
-        <div className="flex-1 space-y-1.5">
-          <div className="flex flex-col rounded-2xl bg-muted/40 px-4 py-3 shadow-sm border border-transparent group-hover:border-border transition-colors">
-            <div className="flex items-center justify-between gap-2 overflow-hidden">
-              <div className="flex items-baseline gap-1.5 overflow-hidden">
-                <span className="text-sm font-bold text-navy truncate">{node.author.name}</span>
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-tight truncate shrink-0">
-                  {node.author.rank} • {node.author.district}
+            <div className="flex-1 min-w-0">
+              {/* Name + time inline */}
+              <div className="flex items-baseline gap-1 flex-wrap">
+                <span className="text-[11px] font-bold text-foreground truncate">{node.author.name}</span>
+                <span className="text-[8px] text-muted-foreground">{node.author.rank}</span>
+                <span className="text-[8px] text-muted-foreground/50 ml-auto shrink-0">
+                  {node.createdAt ? timeAgo(node.createdAt) : "now"}
                 </span>
               </div>
-              <time className="text-[10px] text-muted-foreground shrink-0">
-                {node.createdAt ? new Date(node.createdAt).toLocaleDateString() : "Now"}
-              </time>
-            </div>
-            <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-              {formattedContent}
+
+              {/* Message body */}
+              <div className="text-[11px] text-foreground/90 leading-snug whitespace-pre-wrap">
+                {formattedContent}
+              </div>
+
+              {/* Actions bar */}
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => onReply(node.id, node.author.name)}
+                  className="text-[9px] font-semibold text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+                >
+                  <Reply className="h-2.5 w-2.5" /> Reply
+                </button>
+                {hasReplies && (
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed(!collapsed)}
+                    className="text-[9px] font-semibold text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+                  >
+                    {collapsed ? <ChevronRight className="h-2.5 w-2.5" /> : <ChevronDown className="h-2.5 w-2.5" />}
+                    {node.children.length} {node.children.length === 1 ? "reply" : "replies"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-
-          <div className="flex items-center gap-4 px-2">
-            <button
-              type="button"
-              onClick={() => setIsReplying((prev) => !prev)}
-              className="text-[11px] font-bold text-muted-foreground hover:text-navy hover:underline transition-colors flex items-center gap-1.5"
-            >
-              <MessageSquareReply className="h-3 w-3" />
-              Reply
-            </button>
-          </div>
-
-          {isReplying && (
-            <div className="mt-4 animate-in fade-in slide-in-from-top-1">
-              <CommentComposer
-                placeholder={`Reply to ${node.author.name}...`}
-                autoFocus
-                onSubmit={(content) => {
-                  onReply(content, node.id);
-                  setIsReplying(false);
-                }}
-              />
-            </div>
-          )}
         </div>
-      </div>
 
-      {node.children && node.children.length > 0 && (
-        <div className="space-y-4 pt-1">
-          {node.children.map((child) => (
-            <CommentThread key={child.id} node={child} depth={depth + 1} onReply={onReply} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const ProjectDiscussion = ({ comments, onCreateComment }: ProjectDiscussionProps) => {
-  const tree = useMemo(() => buildTree(comments), [comments]);
-
-  return (
-    <section className="space-y-8 rounded-3xl bg-card border border-border/50 p-6 md:p-8 shadow-xl backdrop-blur-sm">
-      <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-xl bg-gold/10 flex items-center justify-center">
-          <MessageSquareReply className="h-6 w-6 text-gold" />
-        </div>
-        <div>
-          <h2 className="text-xl md:text-2xl font-black text-navy font-display tracking-tight">Community Discussion</h2>
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-[0.1em]">{comments.length} Observations Shared</p>
-        </div>
-      </div>
-
-      <div className="border-t border-border/40 pt-6">
-        <CommentComposer
-          placeholder="Start a discussion or share an observation..."
-          onSubmit={(content) => onCreateComment(content, null)}
-        />
-      </div>
-
-      <div className="space-y-6 pt-4">
-        {tree.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-muted bg-muted/10 px-6 py-12 text-center transition-all hover:bg-muted/20">
-            <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-muted/60 flex items-center justify-center">
-              <MessageSquareReply className="h-6 w-6 text-muted-foreground/60" />
-            </div>
-            <p className="text-sm font-bold text-muted-foreground/80">No points of discussion yet.</p>
-            <p className="text-xs text-muted-foreground mt-1">Be the first to share your thoughts on this innovation.</p>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {tree.map((node) => (
-              <CommentThread
-                key={node.id}
-                node={node}
-                depth={0}
-                onReply={(content, parentId) => onCreateComment(content, parentId)}
-              />
+        {/* Nested replies */}
+        {hasReplies && !collapsed && (
+          <div className="space-y-0">
+            {node.children.map((child) => (
+              <CommentBubble key={child.id} node={child} depth={depth + 1} onReply={onReply} />
             ))}
           </div>
         )}
       </div>
-    </section>
+    </div>
+  );
+};
+
+/* ────────────────────────────────────────────────────────────────────
+   ProjectDiscussion — main panel
+   ──────────────────────────────────────────────────────────────────── */
+
+const ProjectDiscussion = ({ comments, onCreateComment }: ProjectDiscussionProps) => {
+  const tree = useMemo(() => buildTree(comments), [comments]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const [replyTo, setReplyTo] = useState<{ parentId: string; authorName: string } | null>(null);
+
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  };
+
+  useEffect(() => {
+    if (!scrolledUp) scrollToBottom();
+  }, [comments.length, scrolledUp]);
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    setScrolledUp(scrollHeight - scrollTop - clientHeight > 80);
+  };
+
+  return (
+    <div className="flex flex-col rounded-xl bg-card border border-border shadow-lg overflow-hidden h-[calc(100vh-160px)]">
+      {/* ── Header ──────────────────────────────────────── */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/30 shrink-0">
+        <MessageSquareReply className="h-3.5 w-3.5 text-primary shrink-0" />
+        <h2 className="text-xs font-bold text-foreground">Discussion</h2>
+        <span className="text-[10px] text-muted-foreground ml-auto">{comments.length} msg{comments.length !== 1 ? "s" : ""}</span>
+      </div>
+
+      {/* ── Messages ───────────────────────────────────── */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-2 py-1 space-y-0 [scrollbar-width:thin]"
+      >
+        {tree.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-8">
+            <MessageSquareReply className="h-5 w-5 text-muted-foreground/40 mb-1" />
+            <p className="text-[11px] text-muted-foreground/60">No discussion yet</p>
+          </div>
+        ) : (
+          tree.map((node) => (
+            <CommentBubble
+              key={node.id}
+              node={node}
+              depth={0}
+              onReply={(parentId, authorName) => setReplyTo({ parentId, authorName })}
+            />
+          ))
+        )}
+      </div>
+
+      {/* ── Scroll-to-bottom indicator ─────────────────── */}
+      {scrolledUp && (
+        <div className="px-3 py-1 border-t border-border/50 bg-muted/20 shrink-0">
+          <button
+            type="button"
+            onClick={() => { setScrolledUp(false); scrollToBottom(); }}
+            className="w-full text-center text-[10px] font-semibold text-primary hover:underline"
+          >
+            ↓ New messages below
+          </button>
+        </div>
+      )}
+
+      {/* ── Composer (pinned to bottom) ────────────────── */}
+      <div className="px-2 py-1.5 border-t border-border bg-card shrink-0">
+        {replyTo && (
+          <div className="flex items-center justify-between mb-1 px-1">
+            <span className="text-[9px] text-primary font-semibold flex items-center gap-0.5">
+              <Reply className="h-2.5 w-2.5" /> Replying to {replyTo.authorName}
+            </span>
+            <button
+              type="button"
+              onClick={() => setReplyTo(null)}
+              className="text-[10px] text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        <CompactComposer
+          key={replyTo?.parentId ?? "root"}
+          placeholder={replyTo ? `Reply to ${replyTo.authorName}...` : "Write a message..."}
+          autoFocus={!!replyTo}
+          onCancel={replyTo ? () => setReplyTo(null) : undefined}
+          onSubmit={(content) => {
+            onCreateComment(content, replyTo?.parentId ?? null);
+            setReplyTo(null);
+          }}
+        />
+      </div>
+    </div>
   );
 };
 

@@ -9,6 +9,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { useAuth } from "@/hooks/use-auth";
 import LandingPage from "./pages/LandingPage.tsx";
 import Index from "./pages/Index.tsx";
+import IndexV1 from "./pages/IndexV1.tsx";
 import ProjectPage from "./pages/ProjectPage.tsx";
 import CreateProjectPage from "./pages/CreateProjectPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
@@ -16,6 +17,7 @@ import MessagesPage from "./pages/MessagesPage.tsx";
 import NotificationsPage from "./pages/NotificationsPage.tsx";
 import SignInPage from "./pages/SignInPage.tsx";
 import SignUpPage from "./pages/SignUpPage.tsx";
+import AdminDashboard from "./pages/AdminDashboard.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -53,6 +55,22 @@ const App = () => (
 
             <Route
               path="/hub"
+              element={(
+                <ProtectedRoute>
+                  <Index />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/hub1"
+              element={(
+                <ProtectedRoute>
+                  <IndexV1 />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path="/hub2"
               element={(
                 <ProtectedRoute>
                   <Index />
@@ -112,6 +130,15 @@ const App = () => (
               element={(
                 <ProtectedRoute>
                   <NotificationsPage />
+                </ProtectedRoute>
+              )}
+            />
+
+            <Route
+              path="/admin"
+              element={(
+                <ProtectedRoute>
+                  <AdminDashboard />
                 </ProtectedRoute>
               )}
             />

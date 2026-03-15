@@ -82,23 +82,31 @@ const ProjectPage = () => {
         onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")}
         onSearchChange={() => undefined}
       />
-      <main className="mx-auto max-w-5xl px-4 pt-44 pb-6 space-y-6">
-        <ProjectDetail project={project} onBack={() => navigate("/hub")} />
+      <main className="w-full px-4 pt-44 pb-6">
+        <div className="flex flex-col lg:flex-row gap-4 items-start">
+          {/* ── Left 75%: Project Detail + Approval ──────── */}
+          <div className="w-full lg:w-[60%] space-y-6">
+            <ProjectDetail project={project} onBack={() => navigate("/hub2")} />
 
-        <ProjectApproval
-          project={project}
-          onStatusUpdated={(updated) => setProject(updated)}
-        />
+            <ProjectApproval
+              project={project}
+              onStatusUpdated={(updated) => setProject(updated)}
+            />
+          </div>
 
-        <ProjectDiscussion
-          comments={comments}
-          onCreateComment={async (content, parentId) => {
-            const result = await createComment({ projectId, content, parentId });
-            if (result) {
-              setComments((current) => [...current, result]);
-            }
-          }}
-        />
+          {/* ── Right 25%: Discussion ────────────────────── */}
+          <aside className="w-full lg:w-[40%] lg:sticky lg:top-[140px] lg:max-h-[calc(100vh-160px)] lg:overflow-y-auto [scrollbar-width:thin]">
+            <ProjectDiscussion
+              comments={comments}
+              onCreateComment={async (content, parentId) => {
+                const result = await createComment({ projectId, content, parentId });
+                if (result) {
+                  setComments((current) => [...current, result]);
+                }
+              }}
+            />
+          </aside>
+        </div>
       </main>
     </div>
   );

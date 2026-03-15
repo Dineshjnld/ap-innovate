@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowUp } from "lucide-react";
+import { Activity, CheckCircle2, Edit, FilePlus, ShieldCheck, XCircle } from "lucide-react";
 import { subscribeActivityFeed } from "@/services/realtime";
 import type { FeedItem } from "@/data/mockData";
 import { socketService } from "@/services/socket";
@@ -10,16 +10,47 @@ interface LiveFlashTickerProps {
 
 const MAX_STREAM_ITEMS = 12;
 
+// Only project-level actions — no comments
+const isProjectActivity = (item: FeedItem) =>
+  !item.action.toLowerCase().includes("commented");
+
+const actionMeta = (action: string): { icon: React.ReactNode; label: string; color: string } => {
+  const a = action.toLowerCase();
+  if (a.includes("approved"))
+    return { icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: "Project Approved", color: "text-success" };
+  if (a.includes("rejected"))
+    return { icon: <XCircle className="h-3.5 w-3.5" />, label: "Project Rejected", color: "text-destructive" };
+  if (a.includes("review"))
+    return { icon: <ShieldCheck className="h-3.5 w-3.5" />, label: "Sent for Review", color: "text-warning" };
+  if (a.includes("edited"))
+    return { icon: <Edit className="h-3.5 w-3.5" />, label: "Project Updated", color: "text-info" };
+  if (a.includes("submitted"))
+    return { icon: <FilePlus className="h-3.5 w-3.5" />, label: "New Submission", color: "text-gold-dark" };
+  return { icon: <Activity className="h-3.5 w-3.5" />, label: "Update", color: "text-muted-foreground" };
+};
+
+const relativeTime = (iso: string): string => {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+};
+
 const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
   const [items, setItems] = useState<FeedItem[]>([]);
 
   useEffect(() => {
     const socket = socketService.getSocket();
-    
+
     const onNewActivity = (activity: FeedItem) => {
+      if (!isProjectActivity(activity)) return;
       setItems((prev) => {
-        // Avoid duplicates if polling also adds it
-        if (prev.some(a => a.id === activity.id)) return prev;
+        if (prev.some((a) => a.id === activity.id)) return prev;
         return [...prev, activity];
       });
     };
@@ -33,7 +64,7 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
 
   useEffect(() => {
     return subscribeActivityFeed((feed) => {
-      setItems(feed);
+      setItems(feed.filter(isProjectActivity));
     });
   }, []);
 
@@ -54,7 +85,7 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
     <div className="rounded-xl bg-card border border-border shadow-card overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
         <Activity className="h-3.5 w-3.5 text-success" />
-        <h2 className="text-xs font-semibold text-foreground">Live Flash Updates</h2>
+        <h2 className="text-xs font-semibold text-foreground">Project Updates</h2>
       </div>
 
       <div className="relative h-[370px] overflow-hidden">
@@ -63,24 +94,41 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
 
         {!hasItems ? (
           <div className="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
-            Waiting for live activity updates...
+            Waiting for project updates...
           </div>
         ) : (
           <div className={`live-flash-track ${tickerSpeedClass}`}>
-            {streamItems.map((item, index) => (
-              <button
-                key={`${item.id}-${index}`}
-                type="button"
-                onClick={() => onOpenProject(item.projectId)}
-                className="block h-[62px] w-full border-b border-border/60 px-3 text-left transition-colors hover:bg-muted/40"
-              >
-                <p className="mb-0.5 text-[10px] text-muted-foreground">{item.timestamp}</p>
-                <p className="text-xs leading-snug text-foreground">
-                  <ArrowUp className="mr-0.5 inline h-3 w-3 text-gold-dark" />
-                  <span className="font-semibold">{item.user.rank} {item.user.name}</span> {item.action} {item.projectTitle}
-                </p>
-              </button>
-            ))}
+            {streamItems.map((item, index) => {
+              const meta = actionMeta(item.action);
+              return (
+                <button
+                  key={`${item.id}-${index}`}
+                  type="button"
+                  onClick={() => onOpenProject(item.projectId)}
+                  className="flex h-[72px] w-full items-start gap-2.5 border-b border-border/60 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+                >
+                  <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted/60 ${meta.color}`}>
+                    {meta.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`text-[10px] font-semibold uppercase tracking-wide ${meta.color}`}>
+                        {meta.label}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {relativeTime(item.timestamp)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs font-medium text-foreground">
+                      {item.projectTitle}
+                    </p>
+                    <p className="truncate text-[10px] text-muted-foreground">
+                      by {item.user.rank} {item.user.name}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

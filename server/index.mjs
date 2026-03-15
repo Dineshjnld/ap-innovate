@@ -14,6 +14,7 @@ import { Server } from "socket.io";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG
@@ -271,11 +272,15 @@ const initDb = async (retries = 3) => {
       interests TEXT[] DEFAULT '{}',
       bio TEXT DEFAULT '',
       avatar TEXT DEFAULT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
       innovations_count INTEGER DEFAULT 0,
       connections_count INTEGER DEFAULT 0,
       created_at BIGINT NOT NULL
     );
   `);
+
+  // Add role column if missing (migration for existing DBs)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`).catch(() => {});
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -387,6 +392,25 @@ const initDb = async (retries = 3) => {
     );
   `);
 
+  // ── Project versions table (edit history) ────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_versions (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      version INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT[] NOT NULL,
+      district TEXT NOT NULL,
+      problem_statement TEXT NOT NULL,
+      proposed_solution TEXT NOT NULL,
+      budget BIGINT DEFAULT 0,
+      attachments TEXT[] DEFAULT '{}',
+      external_links TEXT[] DEFAULT '{}',
+      edited_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at BIGINT NOT NULL
+    );
+  `);
+
   // ── Indexes ───────────────────────────────────────────────────────────
   const indexes = [
     "CREATE INDEX IF NOT EXISTS idx_projects_author_id ON projects(author_id)",
@@ -413,6 +437,9 @@ const initDb = async (retries = 3) => {
     "CREATE INDEX IF NOT EXISTS idx_auth_refresh_expires ON auth_refresh_tokens(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
     "CREATE INDEX IF NOT EXISTS idx_users_district ON users(district)",
+    "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
+    "CREATE INDEX IF NOT EXISTS idx_project_versions_project ON project_versions(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_project_versions_created ON project_versions(created_at DESC)",
   ];
 
   for (const idx of indexes) {
@@ -508,6 +535,24 @@ const initDb = async (retries = 3) => {
     } catch {}
   }, 60 * 60 * 1000);
 
+  // Seed admin user if none exists
+  try {
+    const adminCheck = await pool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+    if (adminCheck.rowCount === 0) {
+      const adminId = makeId("u");
+      const adminHash = await bcrypt.hash("Admin@2026", 12);
+      await pool.query(
+        `INSERT INTO users (id, name, email, password_hash, rank, district, interests, bio, avatar, role, innovations_count, connections_count, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, '{}', 'System Administrator', NULL, 'admin', 0, 0, $7)
+         ON CONFLICT (email) DO UPDATE SET role = 'admin'`,
+        [adminId, "AP Innovate Admin", "admin@appolice.gov.in", adminHash, "DGP", "Vijayawada HQ", Date.now()],
+      );
+      console.log("  Admin user seeded: admin@appolice.gov.in / Admin@2026");
+    }
+  } catch (err) {
+    console.error("Admin seed failed:", err.message);
+  }
+
   console.log("Database schema initialized with indexes and full-text search.");
 };
 
@@ -554,6 +599,7 @@ const toAuthUser = (row) => ({
   district: row.district,
   bio: row.bio ?? "",
   avatar: row.avatar ?? undefined,
+  role: row.role ?? "user",
   innovationsCount: row.innovations_count ?? 0,
   connectionsCount: row.connections_count ?? 0,
   interests: row.interests ?? [],
@@ -789,8 +835,8 @@ app.post("/api/auth/signup", async (req, res, next) => {
     const interests = Array.isArray(req.body?.categories) ? req.body.categories.map(s => sanitizeText(String(s))) : [];
 
     await pool.query(
-      `INSERT INTO users (id, name, email, password_hash, rank, district, interests, bio, avatar, innovations_count, connections_count, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, '', NULL, 0, 0, $8)`,
+      `INSERT INTO users (id, name, email, password_hash, rank, district, interests, bio, avatar, role, innovations_count, connections_count, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, '', NULL, 'user', 0, 0, $8)`,
       [id, name, email, passwordHash, rank, district, interests, Date.now()],
     );
 
@@ -943,6 +989,58 @@ app.put("/api/users/me", requireAuth, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+/* ── Avatar upload with auto-optimization ────────────────────────────── */
+
+const AVATAR_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB raw input limit
+  fileFilter: (_req, file, cb) => {
+    if (AVATAR_MIMES.has(file.mimetype)) cb(null, true);
+    else cb(new Error("Only JPEG, PNG, GIF, and WebP images are allowed for avatars"));
+  },
+});
+
+app.post("/api/users/me/avatar", requireAuth, (req, res, next) => {
+  avatarUpload.single("avatar")(req, res, async (err) => {
+    if (err) {
+      const msg = err instanceof multer.MulterError ? "File too large (max 10 MB)" : err.message;
+      return res.status(400).json({ message: msg });
+    }
+    if (!req.file) {
+      return res.status(400).json({ message: "No image file provided" });
+    }
+
+    try {
+      const user = await findUserById(req.userId);
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      // Delete old avatar file if it exists
+      if (user.avatar) {
+        const oldFile = path.join(UPLOAD_DIR, path.basename(user.avatar));
+        fs.unlink(oldFile, () => {}); // best-effort delete
+      }
+
+      // Optimize: resize to 256x256, convert to WebP, quality 80
+      const filename = `avatar-${randomUUID()}.webp`;
+      const outputPath = path.join(UPLOAD_DIR, filename);
+
+      await sharp(req.file.buffer)
+        .resize(256, 256, { fit: "cover", position: "centre" })
+        .webp({ quality: 80 })
+        .toFile(outputPath);
+
+      const avatarUrl = `/uploads/${filename}`;
+      await pool.query("UPDATE users SET avatar = $1 WHERE id = $2", [avatarUrl, user.id]);
+
+      const updated = await findUserById(user.id);
+      return res.json(toAuthUser(updated));
+    } catch (e) {
+      next(e);
+    }
+  });
 });
 
 app.get("/api/users", requireAuth, async (req, res, next) => {
@@ -1341,6 +1439,190 @@ app.put("/api/projects/:projectId/status", requireAuth, async (req, res, next) =
     io.to(`project:${projectId}`).emit("project-status-changed", updatedProject);
 
     return res.json(updatedProject);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PROJECT EDIT (author can edit their own project after submission)
+app.put("/api/projects/:projectId", requireAuth, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const row = (await pool.query("SELECT * FROM projects WHERE id = $1", [projectId])).rows[0];
+    if (!row) return res.status(404).json({ message: "Project not found" });
+
+    // Only the author can edit their project
+    if (row.author_id !== req.userId) {
+      return res.status(403).json({ message: "Only the project author can edit this project" });
+    }
+
+    const { title, category, district, problemStatement, proposedSolution, budget, externalLinks, attachments } = req.body;
+
+    // Save current state as a version snapshot before applying edits
+    const currentVersion = row.versions || 1;
+    const versionId = makeId("pv");
+    await pool.query(
+      `INSERT INTO project_versions (id, project_id, version, title, category, district, problem_statement, proposed_solution, budget, attachments, external_links, edited_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [
+        versionId, projectId, currentVersion,
+        row.title, row.category, row.district,
+        row.problem_statement, row.proposed_solution, Number(row.budget),
+        row.attachments || [], row.external_links || [],
+        req.userId, Date.now(),
+      ],
+    );
+
+    // Apply the edits
+    const newTitle = sanitizeText(String(title ?? row.title).trim());
+    const newCategory = Array.isArray(category) ? category.map(s => sanitizeText(String(s))) : row.category;
+    const newDistrict = sanitizeText(String(district ?? row.district).trim());
+    const newProblem = sanitizeText(String(problemStatement ?? row.problem_statement).trim());
+    const newSolution = sanitizeText(String(proposedSolution ?? row.proposed_solution).trim());
+    const newBudget = budget !== undefined ? (Number(budget) || 0) : Number(row.budget);
+    const newLinks = Array.isArray(externalLinks) ? externalLinks : (row.external_links || []);
+    const newAttachments = Array.isArray(attachments) ? attachments : (row.attachments || []);
+    const now = Date.now();
+
+    await pool.query(
+      `UPDATE projects
+       SET title = $1, category = $2, district = $3, problem_statement = $4, proposed_solution = $5,
+           budget = $6, external_links = $7, attachments = $8, versions = $9, updated_at = $10
+       WHERE id = $11`,
+      [newTitle, newCategory, newDistrict, newProblem, newSolution, newBudget, newLinks, newAttachments, currentVersion + 1, now, projectId],
+    );
+
+    const updatedRow = (await pool.query("SELECT * FROM projects WHERE id = $1", [projectId])).rows[0];
+    const author = await findUserById(updatedRow.author_id);
+    const updatedProject = toProject(updatedRow, author);
+
+    await createActivity(req.userId, "edited their innovation", updatedRow.title, projectId);
+    io.emit("project-updated", updatedProject);
+
+    return res.json(updatedProject);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PROJECT VERSION HISTORY
+app.get("/api/projects/:projectId/versions", requireAuth, async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const result = await pool.query(
+      "SELECT * FROM project_versions WHERE project_id = $1 ORDER BY version DESC",
+      [projectId],
+    );
+    const editorIds = [...new Set(result.rows.map(r => r.edited_by))];
+    const editorsResult = editorIds.length > 0
+      ? await pool.query("SELECT * FROM users WHERE id = ANY($1)", [editorIds])
+      : { rows: [] };
+    const editorsMap = new Map(editorsResult.rows.map(r => [r.id, r]));
+
+    const versions = result.rows.map(r => ({
+      id: r.id,
+      projectId: r.project_id,
+      version: r.version,
+      title: r.title,
+      category: r.category,
+      district: r.district,
+      problemStatement: r.problem_statement,
+      proposedSolution: r.proposed_solution,
+      budget: Number(r.budget),
+      attachments: r.attachments || [],
+      externalLinks: r.external_links || [],
+      editedBy: editorsMap.has(r.edited_by) ? toAuthUser(editorsMap.get(r.edited_by)) : null,
+      createdAt: new Date(Number(r.created_at)).toISOString(),
+    }));
+
+    return res.json(versions);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ── Admin middleware ────────────────────────────────────────────────────── */
+
+const requireAdmin = async (req, res, next) => {
+  const user = await findUserById(req.userId);
+  if (!user) return res.status(401).json({ message: "Unauthorized" });
+  if (user.role !== "admin") return res.status(403).json({ message: "Admin access required" });
+  req.adminUser = user;
+  next();
+};
+
+// ADMIN: list all projects with filtering
+app.get("/api/admin/projects", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { status, author, q } = req.query;
+    const params = [];
+    const clauses = [];
+
+    if (status) { params.push(String(status)); clauses.push(`status = $${params.length}`); }
+    if (author) { params.push(String(author)); clauses.push(`author_id = $${params.length}`); }
+    if (q) {
+      const search = `%${String(q).trim().toLowerCase()}%`;
+      params.push(search);
+      clauses.push(`(LOWER(title) LIKE $${params.length} OR LOWER(problem_statement) LIKE $${params.length})`);
+    }
+
+    let sql = "SELECT * FROM projects";
+    if (clauses.length > 0) sql += " WHERE " + clauses.join(" AND ");
+    sql += " ORDER BY updated_at DESC LIMIT 500";
+
+    const result = await pool.query(sql, params);
+
+    const authorIds = [...new Set(result.rows.map(r => r.author_id))];
+    const authorsResult = authorIds.length > 0
+      ? await pool.query("SELECT * FROM users WHERE id = ANY($1)", [authorIds])
+      : { rows: [] };
+    const authorsMap = new Map(authorsResult.rows.map(r => [r.id, r]));
+
+    const projects = result.rows.map(row => toProject(row, authorsMap.get(row.author_id) ?? null));
+    return res.json(projects);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ADMIN: list all users
+app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const result = await pool.query("SELECT * FROM users ORDER BY created_at DESC");
+    return res.json(result.rows.map(toAuthUser));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ADMIN: update user role
+app.put("/api/admin/users/:userId/role", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { role } = req.body;
+    if (!["user", "admin"].includes(role)) return res.status(400).json({ message: "Invalid role" });
+    await pool.query("UPDATE users SET role = $1 WHERE id = $2", [role, req.params.userId]);
+    const updated = await findUserById(req.params.userId);
+    return res.json(toAuthUser(updated));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ADMIN: get dashboard stats
+app.get("/api/admin/stats", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const [projects, users, comments, pending] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM projects"),
+      pool.query("SELECT COUNT(*) FROM users"),
+      pool.query("SELECT COUNT(*) FROM comments"),
+      pool.query("SELECT COUNT(*) FROM projects WHERE status IN ('submitted', 'under_review')"),
+    ]);
+    return res.json({
+      totalProjects: Number(projects.rows[0].count),
+      totalUsers: Number(users.rows[0].count),
+      totalComments: Number(comments.rows[0].count),
+      pendingReview: Number(pending.rows[0].count),
+    });
   } catch (err) {
     next(err);
   }

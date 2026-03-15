@@ -136,6 +136,24 @@ export const uploadFiles = async (files: File[]): Promise<{ url: string; origina
   }));
 };
 
+export const uploadAvatar = async (file: File): Promise<User> => {
+  const formData = new FormData();
+  formData.append("avatar", file);
+
+  const response = await fetch(buildUrl("/api/users/me/avatar"), {
+    method: "POST",
+    headers: { ...getAuthHeaders() },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ message: "Avatar upload failed" }));
+    throw new Error(body.message ?? "Avatar upload failed");
+  }
+
+  return response.json();
+};
+
 /* ─── API Methods ────────────────────────────────────────────────────────── */
 
 export const fetchProjectById = async (projectId: string): Promise<Project | null> => {
@@ -298,4 +316,72 @@ export const getConnectionsCount = async (targetId: string): Promise<{ count: nu
 
 export const fetchStats = async (): Promise<{ totalProjects: number; totalUsers: number; totalComments: number }> => {
   return getJson("/api/stats");
+};
+
+/* ─── Project edit / user projects ────────────────────────────────────── */
+
+export const fetchUserProjects = async (userId: string): Promise<Project[]> => {
+  try {
+    return await getJson<Project[]>("/api/projects", { author: userId });
+  } catch {
+    return [];
+  }
+};
+
+export const updateProject = async (projectId: string, input: Partial<CreateProjectInput>): Promise<Project> => {
+  const response = await fetchWithAuth(`/api/projects/${projectId}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+  return response.json();
+};
+
+export interface ProjectVersion {
+  id: string;
+  projectId: string;
+  version: number;
+  title: string;
+  category: string[];
+  district: string;
+  problemStatement: string;
+  proposedSolution: string;
+  budget: number;
+  attachments: string[];
+  externalLinks: string[];
+  editedBy: import("@/data/mockData").User | null;
+  createdAt: string;
+}
+
+export const fetchProjectVersions = async (projectId: string): Promise<ProjectVersion[]> => {
+  try {
+    return await getJson<ProjectVersion[]>(`/api/projects/${projectId}/versions`);
+  } catch {
+    return [];
+  }
+};
+
+/* ─── Admin API helpers ───────────────────────────────────────────────── */
+
+export const adminFetchProjects = async (query?: { status?: string; author?: string; q?: string }): Promise<Project[]> => {
+  const params: Record<string, string> = {};
+  if (query?.status) params.status = query.status;
+  if (query?.author) params.author = query.author;
+  if (query?.q) params.q = query.q;
+  return getJson<Project[]>("/api/admin/projects", params);
+};
+
+export const adminFetchUsers = async (): Promise<import("@/data/mockData").User[]> => {
+  return getJson("/api/admin/users");
+};
+
+export const adminFetchStats = async (): Promise<{ totalProjects: number; totalUsers: number; totalComments: number; pendingReview: number }> => {
+  return getJson("/api/admin/stats");
+};
+
+export const adminUpdateUserRole = async (userId: string, role: string): Promise<import("@/data/mockData").User> => {
+  const response = await fetchWithAuth(`/api/admin/users/${userId}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
+  });
+  return response.json();
 };

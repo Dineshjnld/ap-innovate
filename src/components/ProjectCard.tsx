@@ -4,6 +4,7 @@ import {
   Clock, FileText, ArrowRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface ProjectCardProps {
   project: Project;
@@ -67,9 +68,12 @@ const ProjectCard = ({ project, onView }: ProjectCardProps) => {
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-full bg-navy/10 flex items-center justify-center text-xs font-bold text-navy">
-              {project.author.name.charAt(0)}
-            </div>
+            <Avatar className="h-6 w-6">
+              <AvatarImage src={project.author.avatar} alt={project.author.name} />
+              <AvatarFallback className="text-xs font-bold bg-navy/10 text-navy">
+                {project.author.name.charAt(0)}
+              </AvatarFallback>
+            </Avatar>
             <span className="text-xs text-muted-foreground">
               {project.author.rank} {project.author.name}
             </span>

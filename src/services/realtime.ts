@@ -20,7 +20,15 @@ import {
   getConnectionStatus,
   getConnectionsCount,
   uploadFiles,
+  uploadAvatar,
   fetchStats,
+  fetchUserProjects,
+  updateProject,
+  fetchProjectVersions,
+  adminFetchProjects,
+  adminFetchUsers,
+  adminFetchStats,
+  adminUpdateUserRole,
 } from "@/services/database";
 
 export {
@@ -45,5 +53,13 @@ export {
   getConnectionStatus,
   getConnectionsCount,
   uploadFiles,
+  uploadAvatar,
   fetchStats,
+  fetchUserProjects,
+  updateProject,
+  fetchProjectVersions,
+  adminFetchProjects,
+  adminFetchUsers,
+  adminFetchStats,
+  adminUpdateUserRole,
 };

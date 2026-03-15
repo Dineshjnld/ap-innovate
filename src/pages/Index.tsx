@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { MapPin, Tag } from "lucide-react";
 import Header from "@/components/Header";
-import FilterPanel from "@/components/FilterPanel";
+import MultiSelectDropdown from "@/components/MultiSelectDropdown";
 import LiveFlashTicker from "@/components/LiveFlashTicker";
 import ProjectCard from "@/components/ProjectCard";
 import StatsBar from "@/components/StatsBar";
@@ -27,6 +28,13 @@ const Index = () => {
   const autoSelectedRef = useRef(false);
 
   useEffect(() => {
+    // If no categories or no districts selected, show empty list
+    if (selectedCategories.length === 0 && selectedDistricts.length === 0) {
+      setProjects([]);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     const unsubscribe = subscribeProjectsLive(
       {
@@ -75,7 +83,7 @@ const Index = () => {
       return;
     }
 
-    navigate("/hub");
+    navigate("/hub2");
   };
 
   const categories = useMemo(
@@ -186,37 +194,44 @@ const Index = () => {
       <main className="w-full px-2 pt-[136px] pb-4">
         <StatsBar projects={allProjects} />
 
-        <div className="flex flex-col lg:flex-row gap-2 items-start">
-          <aside className="w-full lg:w-[30%] lg:sticky lg:top-[136px] lg:max-h-[calc(100vh-145px)] lg:overflow-y-auto shrink-0 order-2 lg:order-1 z-30 scrollbar-thin scrollbar-thumb-muted-foreground/20">
+        <div className="flex flex-col lg:flex-row gap-3 items-start">
+          {/* ── Left: Flash Updates ──────────────────────────── */}
+          <aside className="w-full lg:w-[28%] lg:sticky lg:top-[136px] lg:max-h-[calc(100vh-145px)] lg:overflow-y-auto shrink-0 order-2 lg:order-1 z-30 scrollbar-thin scrollbar-thumb-muted-foreground/20">
             <LiveFlashTicker onOpenProject={handleViewProject} />
           </aside>
 
-          <div className="w-full lg:w-[25%] lg:sticky lg:top-[136px] lg:max-h-[calc(100vh-145px)] lg:overflow-y-auto z-30 shrink-0 order-3 lg:order-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <FilterPanel
-              selectedCategories={selectedCategories}
-              selectedDistricts={selectedDistricts}
-              categories={categories}
-              districts={districts}
-              onCategoriesChange={setSelectedCategories}
-              onDistrictsChange={setSelectedDistricts}
-            />
-          </div>
+          {/* ── Right: Filters + Projects ────────────────────── */}
+          <section className="w-full lg:flex-1 min-w-0 order-1 lg:order-2 flex flex-col gap-2">
+            {/* Filter Dropdowns Row */}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <MultiSelectDropdown
+                label="Categories"
+                icon={<Tag className="h-3.5 w-3.5" />}
+                options={categories}
+                selected={selectedCategories}
+                onChange={setSelectedCategories}
+                accentColor="text-amber-600"
+              />
+              <MultiSelectDropdown
+                label="Districts"
+                icon={<MapPin className="h-3.5 w-3.5" />}
+                options={districts}
+                selected={selectedDistricts}
+                onChange={setSelectedDistricts}
+                accentColor="text-sky-600"
+              />
+            </div>
 
-          <section className="w-full lg:flex-1 min-w-0 order-1 lg:order-3">
-              <div className="rounded-xl bg-card border border-border shadow-card overflow-hidden flex flex-col h-[calc(100vh-145px)]">
-                <div className="bg-card px-3 pt-3 pb-3 border-b border-border shadow-sm z-10 shrink-0">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-col">
-                      <h2 className="text-lg font-bold text-foreground font-display">Project List</h2>
-                      <p className="text-[10px] font-mono text-muted-foreground uppercase opacity-70">
-                        GET /projects{queryPreview ? `?${queryPreview}` : ""}
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {projects.length} project{projects.length !== 1 ? "s" : ""}
-                    </span>
-                  </div>
+            {/* Project List */}
+            <div className="rounded-xl bg-card border border-border shadow-card overflow-hidden flex flex-col h-[calc(100vh-200px)]">
+              <div className="bg-card px-3 py-2.5 border-b border-border shadow-sm z-10 shrink-0">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-foreground font-display">Project List</h2>
+                  <span className="text-xs text-muted-foreground">
+                    {projects.length} project{projects.length !== 1 ? "s" : ""}
+                  </span>
                 </div>
+              </div>
 
                 <div className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40">
                   {normalizedGlobalQuery ? (

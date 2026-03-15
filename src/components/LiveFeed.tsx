@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { type FeedItem } from "@/data/mockData";
 import { subscribeActivityFeed } from "@/services/database";
-import { Activity, ArrowRight, User as UserIcon } from "lucide-react";
+import { Activity, ArrowRight } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface LiveFeedProps {
   onViewProject: (id: string) => void;
@@ -35,9 +36,12 @@ const LiveFeed = ({ onViewProject }: LiveFeedProps) => {
               className="flex w-full items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left"
               style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className="mt-0.5 h-8 w-8 shrink-0 rounded-full bg-navy/10 flex items-center justify-center">
-                <UserIcon className="h-4 w-4 text-navy" />
-              </div>
+              <Avatar className="mt-0.5 h-8 w-8 shrink-0">
+                <AvatarImage src={item.user?.avatar} alt={item.user?.name} />
+                <AvatarFallback className="bg-navy/10 text-navy text-xs font-bold">
+                  {item.user?.name?.charAt(0) ?? "?"}
+                </AvatarFallback>
+              </Avatar>
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-foreground">
                   <span className="font-semibold">{item.user?.rank} {item.user?.name}</span>{" "}

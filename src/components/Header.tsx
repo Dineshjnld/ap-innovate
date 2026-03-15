@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Home, LogOut, MessageSquare, Search, User } from "lucide-react";
+import { Bell, Home, LogOut, MessageSquare, Search, Shield, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -94,6 +94,19 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
           >
             Submit Innovation
           </Button>
+
+          {session?.user?.role === "admin" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/admin")}
+              className="border-navy-light bg-navy-light/40 text-primary-foreground hover:bg-navy-light"
+            >
+              <Shield className="h-4 w-4 mr-1" />
+              Admin
+            </Button>
+          )}
 
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-foreground/60" />

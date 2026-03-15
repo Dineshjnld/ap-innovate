@@ -37,6 +37,7 @@ export interface User {
   email: string;
   avatar?: string;
   bio?: string;
+  role?: string;
   innovationsCount: number;
   connectionsCount: number;
 }

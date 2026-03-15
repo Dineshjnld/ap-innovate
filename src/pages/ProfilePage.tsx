@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Mail, MapPin, Shield, Sparkles, Users, UserPlus } from "lucide-react";
+import { Camera, Mail, MapPin, Shield, Sparkles, Users, UserPlus, FileText, Clock, CheckCircle2, XCircle, Edit, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import Header from "@/components/Header";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,17 +8,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { DISTRICTS, type User } from "@/data/mockData";
+import { CATEGORIES, DISTRICTS, type User, type Project } from "@/data/mockData";
 import { useAuth } from "@/hooks/use-auth";
 import {
   subscribeCurrentUserProfile,
   updateCurrentUserProfile,
+  uploadAvatar,
   fetchUserById,
+  fetchUserProjects,
+  updateProject,
   toggleFollowUser,
   getFollowerInfo,
   requestConnection,
   getConnectionStatus,
   getConnectionsCount,
+  uploadFiles,
 } from "@/services/realtime";
 
 const ProfilePage = () => {
@@ -41,6 +45,14 @@ const ProfilePage = () => {
   const [connectionState, setConnectionState] = useState<"none" | "requested" | "incoming-request" | "connected">("none");
   const [followersCount, setFollowersCount] = useState(0);
   const [connectionCount, setConnectionCount] = useState(0);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [userProjects, setUserProjects] = useState<Project[]>([]);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editProject, setEditProject] = useState<Partial<{ title: string; category: string[]; district: string; problemStatement: string; proposedSolution: string; budget: string; externalLinks: string[]; attachments: string[] }>>({});
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingProjectFiles, setIsUploadingProjectFiles] = useState(false);
 
   useEffect(() => {
     if (session?.user && isOwnProfile) {
@@ -91,6 +103,13 @@ const ProfilePage = () => {
     void getFollowerInfo(session.user.id).then((info) => setFollowersCount(info.count)).catch(() => {});
     void getConnectionsCount(session.user.id).then((res) => setConnectionCount(res.count)).catch(() => {});
   }, [isOwnProfile, session?.user?.id]);
+
+  // Fetch user's projects
+  useEffect(() => {
+    const uid = isOwnProfile ? session?.user?.id : userId;
+    if (!uid) return;
+    void fetchUserProjects(uid).then(setUserProjects).catch(() => {});
+  }, [isOwnProfile, userId, session?.user?.id]);
 
   useEffect(() => {
     if (!profile) {
@@ -201,6 +220,98 @@ const ProfilePage = () => {
     }
   };
 
+  const onAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so the same file can be re-selected
+    e.target.value = "";
+
+    setIsUploadingAvatar(true);
+    try {
+      const updatedUser = await uploadAvatar(file);
+      setProfile(updatedUser);
+      updateProfile(updatedUser);
+      toast.success("Profile photo updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to upload photo");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const startEditProject = (project: Project) => {
+    setEditingProjectId(project.id);
+    setEditProject({
+      title: project.title,
+      category: [...project.category],
+      district: project.district,
+      problemStatement: project.problemStatement,
+      proposedSolution: project.proposedSolution,
+      budget: String(project.budget || ""),
+      externalLinks: [...(project.externalLinks || [])],
+      attachments: [...(project.attachments || [])],
+    });
+  };
+
+  const cancelEditProject = () => {
+    setEditingProjectId(null);
+    setEditProject({});
+  };
+
+  const onSaveProject = async (projectId: string) => {
+    if (!editProject.title?.trim()) { toast.error("Title is required"); return; }
+    if (!editProject.problemStatement?.trim()) { toast.error("Problem statement is required"); return; }
+
+    setIsSavingProject(true);
+    try {
+      const updated = await updateProject(projectId, {
+        title: editProject.title,
+        category: editProject.category,
+        district: editProject.district,
+        problemStatement: editProject.problemStatement,
+        proposedSolution: editProject.proposedSolution,
+        budget: Number(editProject.budget) || 0,
+        externalLinks: editProject.externalLinks,
+        attachments: editProject.attachments,
+      });
+      setUserProjects((prev) => prev.map((p) => (p.id === projectId ? updated : p)));
+      setEditingProjectId(null);
+      setEditProject({});
+      toast.success("Project updated (v" + updated.versions + ")");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update project");
+    } finally {
+      setIsSavingProject(false);
+    }
+  };
+
+  const onProjectFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    e.target.value = "";
+    setIsUploadingProjectFiles(true);
+    try {
+      const uploaded = await uploadFiles(fileArray);
+      setEditProject((prev) => ({
+        ...prev,
+        attachments: [...(prev.attachments || []), ...uploaded.map((f) => f.url)],
+      }));
+    } catch {
+      toast.error("File upload failed");
+    } finally {
+      setIsUploadingProjectFiles(false);
+    }
+  };
+
+  const statusConfig: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
+    approved: { label: "Approved", className: "bg-success/10 text-success border-success/20", icon: <CheckCircle2 className="h-3 w-3" /> },
+    under_review: { label: "Under Review", className: "bg-warning/10 text-warning border-warning/20", icon: <Clock className="h-3 w-3" /> },
+    submitted: { label: "Submitted", className: "bg-info/10 text-info border-info/20", icon: <FileText className="h-3 w-3" /> },
+    draft: { label: "Draft", className: "bg-muted text-muted-foreground border-border", icon: <FileText className="h-3 w-3" /> },
+    rejected: { label: "Rejected", className: "bg-destructive/10 text-destructive border-destructive/20", icon: <XCircle className="h-3 w-3" /> },
+  };
+
   const nameInitials =
     profile?.name
       .split(" ")
@@ -233,10 +344,32 @@ const ProfilePage = () => {
               <CardContent className="-mt-14 p-6">
                 <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                   <div className="flex items-end gap-4">
-                    <Avatar className="h-28 w-28 border-4 border-background shadow-md">
-                      {profile.avatar ? <AvatarImage src={profile.avatar} alt={profile.name} /> : null}
-                      <AvatarFallback className="bg-gold/20 text-2xl font-bold text-gold-dark">{nameInitials}</AvatarFallback>
-                    </Avatar>
+                    <div className="relative group">
+                      <Avatar className="h-28 w-28 border-4 border-background shadow-md">
+                        {profile.avatar ? <AvatarImage src={profile.avatar} alt={profile.name} /> : null}
+                        <AvatarFallback className="bg-gold/20 text-2xl font-bold text-gold-dark">{nameInitials}</AvatarFallback>
+                      </Avatar>
+                      {isOwnProfile && (
+                        <>
+                          <input
+                            ref={avatarInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/gif,image/webp"
+                            className="hidden"
+                            onChange={(e) => void onAvatarChange(e)}
+                          />
+                          <button
+                            type="button"
+                            disabled={isUploadingAvatar}
+                            onClick={() => avatarInputRef.current?.click()}
+                            className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-navy text-white flex items-center justify-center shadow-md border-2 border-background opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                            title="Change profile photo"
+                          >
+                            <Camera className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                     <div>
                       <h1 className="text-2xl font-bold text-foreground font-display">{profile.name}</h1>
                       <p className="text-sm text-muted-foreground">{profile.rank} • Andhra Pradesh Police</p>
@@ -394,6 +527,190 @@ const ProfilePage = () => {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* My Projects */}
+                {userProjects.length > 0 && (
+                  <Card className="border-border shadow-card">
+                    <CardHeader>
+                      <CardTitle className="text-lg font-display">
+                        {isOwnProfile ? "My Projects" : "Projects"}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {userProjects.map((project) => {
+                        const isEditingThis = editingProjectId === project.id;
+                        const sc = statusConfig[project.status] ?? statusConfig.submitted;
+                        return (
+                          <div key={project.id} className="rounded-lg border border-border bg-muted/20 p-4">
+                            {!isEditingThis ? (
+                              <>
+                                <div className="flex items-start justify-between gap-2">
+                                  <button
+                                    onClick={() => navigate(`/project/${project.id}`)}
+                                    className="text-left text-sm font-semibold text-foreground hover:text-primary hover:underline"
+                                  >
+                                    {project.title}
+                                  </button>
+                                  <Badge variant="outline" className={`shrink-0 gap-1 text-[10px] ${sc.className}`}>
+                                    {sc.icon} {sc.label}
+                                  </Badge>
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                  <span>{project.district}</span>
+                                  <span>·</span>
+                                  <span>{new Date(project.createdAt).toLocaleDateString()}</span>
+                                  {project.versions > 1 && (
+                                    <>
+                                      <span>·</span>
+                                      <span>v{project.versions}</span>
+                                    </>
+                                  )}
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {project.category.map((c) => (
+                                    <Badge key={c} variant="secondary" className="text-[10px]">{c}</Badge>
+                                  ))}
+                                </div>
+                                {isOwnProfile && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="mt-2 h-7 gap-1 px-2 text-xs"
+                                    onClick={() => startEditProject(project)}
+                                  >
+                                    <Edit className="h-3 w-3" /> Edit
+                                  </Button>
+                                )}
+                              </>
+                            ) : (
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Title</label>
+                                  <input
+                                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                                    value={editProject.title ?? ""}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, title: e.target.value }))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">District</label>
+                                  <select
+                                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                                    value={editProject.district ?? ""}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, district: e.target.value }))}
+                                  >
+                                    {DISTRICTS.map((d) => (
+                                      <option key={d} value={d}>{d}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Categories</label>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {CATEGORIES.map((cat) => {
+                                      const selected = editProject.category?.includes(cat) ?? false;
+                                      return (
+                                        <Badge
+                                          key={cat}
+                                          variant={selected ? "default" : "outline"}
+                                          className="cursor-pointer text-[10px]"
+                                          onClick={() =>
+                                            setEditProject((p) => ({
+                                              ...p,
+                                              category: selected
+                                                ? (p.category ?? []).filter((c) => c !== cat)
+                                                : [...(p.category ?? []), cat],
+                                            }))
+                                          }
+                                        >
+                                          {cat}
+                                        </Badge>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Problem Statement</label>
+                                  <Textarea
+                                    className="min-h-[60px] text-sm"
+                                    value={editProject.problemStatement ?? ""}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, problemStatement: e.target.value }))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Proposed Solution</label>
+                                  <Textarea
+                                    className="min-h-[60px] text-sm"
+                                    value={editProject.proposedSolution ?? ""}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, proposedSolution: e.target.value }))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Budget (₹)</label>
+                                  <input
+                                    type="number"
+                                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                                    value={editProject.budget ?? ""}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, budget: e.target.value }))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Attachments</label>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {(editProject.attachments ?? []).map((url, idx) => (
+                                      <Badge key={idx} variant="secondary" className="gap-1 text-[10px]">
+                                        {url.split("/").pop()}
+                                        <button
+                                          className="ml-1 text-destructive hover:text-destructive/80"
+                                          onClick={() =>
+                                            setEditProject((p) => ({
+                                              ...p,
+                                              attachments: (p.attachments ?? []).filter((_, i) => i !== idx),
+                                            }))
+                                          }
+                                        >
+                                          ×
+                                        </button>
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                  <input ref={editFileInputRef} type="file" multiple className="hidden" onChange={onProjectFileUpload} />
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-1.5 h-7 text-xs"
+                                    disabled={isUploadingProjectFiles}
+                                    onClick={() => editFileInputRef.current?.click()}
+                                  >
+                                    {isUploadingProjectFiles ? "Uploading…" : "Add Files"}
+                                  </Button>
+                                </div>
+                                <div className="flex gap-2 pt-1">
+                                  <Button
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    disabled={isSavingProject}
+                                    onClick={() => onSaveProject(project.id)}
+                                  >
+                                    {isSavingProject ? "Saving…" : "Save Changes"}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    onClick={cancelEditProject}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               <div className="space-y-5 lg:col-span-4">
