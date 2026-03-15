@@ -330,6 +330,8 @@ const initDb = async (retries = 3) => {
       proposed_solution TEXT NOT NULL,
       budget BIGINT DEFAULT 0,
       funding TEXT NOT NULL DEFAULT 'Self Funding',
+      officer_in_charge TEXT NOT NULL DEFAULT '',
+      company TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'submitted',
       approved_by_name TEXT,
       approved_by_rank TEXT,
@@ -347,6 +349,8 @@ const initDb = async (retries = 3) => {
 
   // Add funding column if missing (migration for existing DBs)
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS funding TEXT NOT NULL DEFAULT 'Self Funding'`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS officer_in_charge TEXT NOT NULL DEFAULT ''`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS company TEXT DEFAULT ''`).catch(() => {});
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS comments (
@@ -656,6 +660,8 @@ const toProject = (row, author) => ({
   proposedSolution: row.proposed_solution,
   budget: Number(row.budget),
   funding: row.funding || "Self Funding",
+  officerInCharge: row.officer_in_charge || "",
+  company: row.company || "",
   status: row.status,
   approvedBy: row.approved_by_name
     ? {
@@ -1370,8 +1376,8 @@ app.get("/api/projects", requireAuth, async (req, res, next) => {
 
 app.post("/api/projects", requireAuth, async (req, res, next) => {
   try {
-    const { title, category, district, problemStatement, proposedSolution, budget, funding, externalLinks, attachments } = req.body;
-    if (!title || !category || !district || !problemStatement) {
+    const { title, category, district, problemStatement, proposedSolution, budget, funding, officerInCharge, company, externalLinks, attachments } = req.body;
+    if (!title || !category || !district || !problemStatement || !officerInCharge) {
       return res.status(400).json({ message: "Missing required project fields" });
     }
 
@@ -1380,8 +1386,8 @@ app.post("/api/projects", requireAuth, async (req, res, next) => {
     const now = Date.now();
 
     await pool.query(
-      `INSERT INTO projects (id, title, slug, category, district, author_id, problem_statement, proposed_solution, budget, funding, created_at, updated_at, external_links, attachments)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      `INSERT INTO projects (id, title, slug, category, district, author_id, problem_statement, proposed_solution, budget, funding, officer_in_charge, company, created_at, updated_at, external_links, attachments)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         id,
         sanitizeText(title),
@@ -1393,6 +1399,8 @@ app.post("/api/projects", requireAuth, async (req, res, next) => {
         sanitizeText(proposedSolution ?? ""),
         Number(budget) || 0,
         sanitizeText(String(funding || "Self Funding")),
+        sanitizeText(String(officerInCharge)),
+        sanitizeText(String(company || "")),
         now,
         now,
         Array.isArray(externalLinks) ? externalLinks : [],
@@ -1498,7 +1506,7 @@ app.put("/api/projects/:projectId", requireAuth, async (req, res, next) => {
       return res.status(403).json({ message: "Only the project author can edit this project" });
     }
 
-    const { title, category, district, problemStatement, proposedSolution, budget, funding, externalLinks, attachments } = req.body;
+    const { title, category, district, problemStatement, proposedSolution, budget, funding, officerInCharge, company, externalLinks, attachments } = req.body;
 
     // Save current state as a version snapshot before applying edits
     const currentVersion = row.versions || 1;
@@ -1523,6 +1531,8 @@ app.put("/api/projects/:projectId", requireAuth, async (req, res, next) => {
     const newSolution = sanitizeText(String(proposedSolution ?? row.proposed_solution).trim());
     const newBudget = budget !== undefined ? (Number(budget) || 0) : Number(row.budget);
     const newFunding = funding !== undefined ? sanitizeText(String(funding).trim()) : (row.funding || "Self Funding");
+    const newOfficerInCharge = officerInCharge !== undefined ? sanitizeText(String(officerInCharge).trim()) : (row.officer_in_charge || "");
+    const newCompany = company !== undefined ? sanitizeText(String(company).trim()) : (row.company || "");
     const newLinks = Array.isArray(externalLinks) ? externalLinks : (row.external_links || []);
     const newAttachments = Array.isArray(attachments) ? attachments : (row.attachments || []);
     const now = Date.now();
@@ -1530,9 +1540,9 @@ app.put("/api/projects/:projectId", requireAuth, async (req, res, next) => {
     await pool.query(
       `UPDATE projects
        SET title = $1, category = $2, district = $3, problem_statement = $4, proposed_solution = $5,
-           budget = $6, funding = $7, external_links = $8, attachments = $9, versions = $10, updated_at = $11
-       WHERE id = $12`,
-      [newTitle, newCategory, newDistrict, newProblem, newSolution, newBudget, newFunding, newLinks, newAttachments, currentVersion + 1, now, projectId],
+           budget = $6, funding = $7, officer_in_charge = $8, company = $9, external_links = $10, attachments = $11, versions = $12, updated_at = $13
+       WHERE id = $14`,
+      [newTitle, newCategory, newDistrict, newProblem, newSolution, newBudget, newFunding, newOfficerInCharge, newCompany, newLinks, newAttachments, currentVersion + 1, now, projectId],
     );
 
     const updatedRow = (await pool.query("SELECT * FROM projects WHERE id = $1", [projectId])).rows[0];

@@ -54,6 +54,8 @@ export interface Project {
   proposedSolution: string;
   budget: number;
   funding: string;
+  officerInCharge: string;
+  company: string;
   status: "draft" | "submitted" | "under_review" | "approved" | "rejected";
   approvedBy?: { name: string; rank: string; date: string; comment: string };
   createdAt: string;

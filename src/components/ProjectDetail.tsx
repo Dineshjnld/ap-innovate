@@ -118,6 +118,16 @@ const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
                   Funding: <span className="font-medium text-foreground">{project.funding}</span>
                 </span>
               )}
+              {project.officerInCharge && (
+                <span className="text-xs text-muted-foreground border-l border-border pl-4">
+                  Officer in Charge: <span className="font-medium text-foreground">{project.officerInCharge}</span>
+                </span>
+              )}
+              {project.company && (
+                <span className="text-xs text-muted-foreground border-l border-border pl-4">
+                  Company: <span className="font-medium text-foreground">{project.company}</span>
+                </span>
+              )}
             </div>
           </div>
 

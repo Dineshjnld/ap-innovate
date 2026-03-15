@@ -31,6 +31,8 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
   const [solution, setSolution] = useState("");
   const [budget, setBudget] = useState("");
   const [funding, setFunding] = useState("Self Funding");
+  const [officerInCharge, setOfficerInCharge] = useState("");
+  const [company, setCompany] = useState("");
   const [externalLink, setExternalLink] = useState("");
   const [externalLinks, setExternalLinks] = useState<string[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -106,6 +108,11 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
       return;
     }
 
+    if (!officerInCharge.trim()) {
+      setError("Officer in Charge is required.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -117,6 +124,8 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
         proposedSolution: solution,
         budget: budget.trim().length > 0 ? Number(budget) : 0,
         funding: funding.trim() || "Self Funding",
+        officerInCharge: officerInCharge.trim(),
+        company: company.trim(),
         externalLinks,
         attachments: uploadedFiles.map((f) => f.url),
       });
@@ -265,6 +274,31 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
               <option value="External Donor">External Donor</option>
               <option value="Other">Other</option>
             </select>
+          </div>
+
+          {/* Officer in Charge */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Officer in Charge *</label>
+            <input
+              type="text"
+              value={officerInCharge}
+              onChange={(e) => setOfficerInCharge(e.target.value)}
+              placeholder="Name of the officer in charge"
+              className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-gold/50 placeholder:text-muted-foreground"
+              required
+            />
+          </div>
+
+          {/* Company */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Company</label>
+            <input
+              type="text"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Company name (if applicable)"
+              className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-gold/50 placeholder:text-muted-foreground"
+            />
           </div>
 
           {/* Attachments */}

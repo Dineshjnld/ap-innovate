@@ -49,7 +49,7 @@ const ProfilePage = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-  const [editProject, setEditProject] = useState<Partial<{ title: string; category: string[]; district: string; problemStatement: string; proposedSolution: string; budget: string; funding: string; externalLinks: string[]; attachments: string[] }>>({});
+  const [editProject, setEditProject] = useState<Partial<{ title: string; category: string[]; district: string; problemStatement: string; proposedSolution: string; budget: string; funding: string; officerInCharge: string; company: string; externalLinks: string[]; attachments: string[] }>>({});
   const [isSavingProject, setIsSavingProject] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingProjectFiles, setIsUploadingProjectFiles] = useState(false);
@@ -249,6 +249,8 @@ const ProfilePage = () => {
       proposedSolution: project.proposedSolution,
       budget: String(project.budget || ""),
       funding: project.funding || "Self Funding",
+      officerInCharge: project.officerInCharge || "",
+      company: project.company || "",
       externalLinks: [...(project.externalLinks || [])],
       attachments: [...(project.attachments || [])],
     });
@@ -273,6 +275,8 @@ const ProfilePage = () => {
         proposedSolution: editProject.proposedSolution,
         budget: Number(editProject.budget) || 0,
         funding: editProject.funding || "Self Funding",
+        officerInCharge: editProject.officerInCharge || "",
+        company: editProject.company || "",
         externalLinks: editProject.externalLinks,
         attachments: editProject.attachments,
       });
@@ -672,6 +676,26 @@ const ProfilePage = () => {
                                     <option value="External Donor">External Donor</option>
                                     <option value="Other">Other</option>
                                   </select>
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Officer in Charge</label>
+                                  <input
+                                    type="text"
+                                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                                    value={editProject.officerInCharge ?? ""}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, officerInCharge: e.target.value }))}
+                                    placeholder="Name of officer in charge"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Company</label>
+                                  <input
+                                    type="text"
+                                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                                    value={editProject.company ?? ""}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, company: e.target.value }))}
+                                    placeholder="Company name (optional)"
+                                  />
                                 </div>
                                 <div>
                                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Attachments</label>
