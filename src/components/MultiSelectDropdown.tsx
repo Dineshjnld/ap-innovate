@@ -8,6 +8,9 @@ interface MultiSelectDropdownProps {
   selected: string[];
   onChange: (selected: string[]) => void;
   accentColor?: string;
+  accentBg?: string;
+  accentBorder?: string;
+  accentHover?: string;
 }
 
 const MultiSelectDropdown = ({
@@ -17,6 +20,9 @@ const MultiSelectDropdown = ({
   selected,
   onChange,
   accentColor = "text-foreground",
+  accentBg = "bg-card",
+  accentBorder = "border-border",
+  accentHover = "hover:bg-muted/50",
 }: MultiSelectDropdownProps) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -60,14 +66,14 @@ const MultiSelectDropdown = ({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left shadow-sm hover:bg-muted/50 transition-colors"
+        className={`flex w-full items-center gap-2 rounded-lg border-2 ${accentBorder} ${accentBg} px-3 py-2.5 text-left shadow-md ${accentHover} transition-colors`}
       >
         {icon && <span className={`shrink-0 ${accentColor}`}>{icon}</span>}
         <div className="flex flex-col min-w-0 flex-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-none mb-0.5">
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${accentColor} leading-none mb-0.5`}>
             {label}
           </span>
-          <span className="text-xs text-foreground truncate">{summaryText}</span>
+          <span className="text-xs font-medium text-foreground truncate">{summaryText}</span>
         </div>
         <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { MapPin, Tag } from "lucide-react";
 import Header from "@/components/Header";
 import MultiSelectDropdown from "@/components/MultiSelectDropdown";
@@ -17,10 +17,19 @@ import { subscribeDiscoverUsers } from "@/services/realtime";
 
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { session } = useAuth();
   const [selectedCategories, setSelectedCategories] = useState<string[]>([...CATEGORIES]);
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([...DISTRICTS]);
-  const [globalQuery, setGlobalQuery] = useState("");
+  const [globalQuery, setGlobalQuery] = useState(searchParams.get("q") ?? "");
+
+  // Clear ?q= from URL after reading it
+  useEffect(() => {
+    if (searchParams.has("q")) {
+      searchParams.delete("q");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [discoverUsers, setDiscoverUsers] = useState<User[]>([]);
@@ -210,7 +219,10 @@ const Index = () => {
                 options={categories}
                 selected={selectedCategories}
                 onChange={setSelectedCategories}
-                accentColor="text-amber-600"
+                accentColor="text-amber-700 dark:text-amber-400"
+                accentBg="bg-amber-50 dark:bg-amber-950/30"
+                accentBorder="border-amber-300 dark:border-amber-700"
+                accentHover="hover:bg-amber-100 dark:hover:bg-amber-900/40"
               />
               <MultiSelectDropdown
                 label="Districts"
@@ -218,7 +230,10 @@ const Index = () => {
                 options={districts}
                 selected={selectedDistricts}
                 onChange={setSelectedDistricts}
-                accentColor="text-sky-600"
+                accentColor="text-sky-700 dark:text-sky-400"
+                accentBg="bg-sky-50 dark:bg-sky-950/30"
+                accentBorder="border-sky-300 dark:border-sky-700"
+                accentHover="hover:bg-sky-100 dark:hover:bg-sky-900/40"
               />
             </div>
 

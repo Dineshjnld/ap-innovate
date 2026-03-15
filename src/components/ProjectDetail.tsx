@@ -108,9 +108,16 @@ const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
                 <p className="text-xs text-muted-foreground">{project.author.district} District</p>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-              <IndianRupee className="h-4 w-4 text-gold-dark" />
-              {project.budget.toLocaleString("en-IN")}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                <IndianRupee className="h-4 w-4 text-gold-dark" />
+                {project.budget.toLocaleString("en-IN")}
+              </div>
+              {project.funding && (
+                <span className="text-xs text-muted-foreground border-l border-border pl-4">
+                  Funding: <span className="font-medium text-foreground">{project.funding}</span>
+                </span>
+              )}
             </div>
           </div>
 

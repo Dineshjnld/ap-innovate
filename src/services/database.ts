@@ -21,6 +21,7 @@ export interface CreateProjectInput {
   problemStatement: string;
   proposedSolution: string;
   budget?: number;
+  funding?: string;
   externalLinks?: string[];
   attachments?: string[];
 }

@@ -30,6 +30,7 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
   const [problem, setProblem] = useState("");
   const [solution, setSolution] = useState("");
   const [budget, setBudget] = useState("");
+  const [funding, setFunding] = useState("Self Funding");
   const [externalLink, setExternalLink] = useState("");
   const [externalLinks, setExternalLinks] = useState<string[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
@@ -115,6 +116,7 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
         problemStatement: problem,
         proposedSolution: solution,
         budget: budget.trim().length > 0 ? Number(budget) : 0,
+        funding: funding.trim() || "Self Funding",
         externalLinks,
         attachments: uploadedFiles.map((f) => f.url),
       });
@@ -244,6 +246,25 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
               placeholder="e.g. 500000"
               className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-gold/50 placeholder:text-muted-foreground"
             />
+          </div>
+
+          {/* Funding */}
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Funding Source</label>
+            <select
+              aria-label="Funding Source"
+              value={funding}
+              onChange={(e) => setFunding(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-gold/50"
+            >
+              <option value="Self Funding">Self Funding</option>
+              <option value="Government Grant">Government Grant</option>
+              <option value="CSR Funding">CSR Funding</option>
+              <option value="Public-Private Partnership">Public-Private Partnership</option>
+              <option value="Departmental Budget">Departmental Budget</option>
+              <option value="External Donor">External Donor</option>
+              <option value="Other">Other</option>
+            </select>
           </div>
 
           {/* Attachments */}

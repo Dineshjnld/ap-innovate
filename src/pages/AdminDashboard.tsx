@@ -115,7 +115,7 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background font-body">
-      <Header onNavigate={(p) => navigate(p === "dashboard" ? "/hub2" : "/create")} onSearchChange={() => {}} />
+      <Header onNavigate={(p) => navigate(p === "dashboard" ? "/hub2" : "/create")} />
       <main className="mx-auto max-w-7xl px-4 pt-36 pb-12 sm:px-6 lg:px-8">
         <h1 className="mb-6 text-2xl font-bold font-display text-foreground">Admin Dashboard</h1>
 

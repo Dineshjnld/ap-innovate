@@ -13,7 +13,6 @@ const CreateProjectPage = () => {
     <div className="min-h-screen bg-background">
       <Header
         onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")}
-        onSearchChange={() => undefined}
       />
       <main className="mx-auto max-w-5xl px-4 pt-40 pb-6">
         <CreateProjectForm

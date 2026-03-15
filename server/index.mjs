@@ -72,6 +72,8 @@ const io = new Server(httpServer, {
 });
 
 const socketUserMap = new Map();
+const onlineUsers = new Map(); // userId -> { socketIds: Set, lastSeen: null }
+const lastSeenMap = new Map(); // userId -> timestamp (when they go offline)
 
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
@@ -80,6 +82,26 @@ io.on("connection", (socket) => {
     if (userId && typeof userId === "string") {
       socketUserMap.set(socket.id, userId);
       socket.join(`user:${userId}`);
+
+      // Track online presence
+      if (!onlineUsers.has(userId)) {
+        onlineUsers.set(userId, new Set());
+      }
+      onlineUsers.get(userId).add(socket.id);
+      lastSeenMap.delete(userId); // Clear last seen — they're online now
+
+      // Broadcast this user came online
+      io.emit("presence-update", { userId, status: "online" });
+
+      // Send the new socket the full presence map
+      const presenceSnapshot = {};
+      for (const [uid, sockets] of onlineUsers.entries()) {
+        if (sockets.size > 0) presenceSnapshot[uid] = { status: "online" };
+      }
+      for (const [uid, ts] of lastSeenMap.entries()) {
+        if (!presenceSnapshot[uid]) presenceSnapshot[uid] = { status: "offline", lastSeen: ts };
+      }
+      socket.emit("presence-snapshot", presenceSnapshot);
     }
   });
 
@@ -112,7 +134,21 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    const userId = socketUserMap.get(socket.id);
     socketUserMap.delete(socket.id);
+
+    if (userId) {
+      const sockets = onlineUsers.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          onlineUsers.delete(userId);
+          const now = Date.now();
+          lastSeenMap.set(userId, now);
+          io.emit("presence-update", { userId, status: "offline", lastSeen: now });
+        }
+      }
+    }
   });
 });
 
@@ -293,6 +329,7 @@ const initDb = async (retries = 3) => {
       problem_statement TEXT NOT NULL,
       proposed_solution TEXT NOT NULL,
       budget BIGINT DEFAULT 0,
+      funding TEXT NOT NULL DEFAULT 'Self Funding',
       status TEXT NOT NULL DEFAULT 'submitted',
       approved_by_name TEXT,
       approved_by_rank TEXT,
@@ -307,6 +344,9 @@ const initDb = async (retries = 3) => {
       search_vector TSVECTOR
     );
   `);
+
+  // Add funding column if missing (migration for existing DBs)
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS funding TEXT NOT NULL DEFAULT 'Self Funding'`).catch(() => {});
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS comments (
@@ -615,6 +655,7 @@ const toProject = (row, author) => ({
   problemStatement: row.problem_statement,
   proposedSolution: row.proposed_solution,
   budget: Number(row.budget),
+  funding: row.funding || "Self Funding",
   status: row.status,
   approvedBy: row.approved_by_name
     ? {
@@ -1329,7 +1370,7 @@ app.get("/api/projects", requireAuth, async (req, res, next) => {
 
 app.post("/api/projects", requireAuth, async (req, res, next) => {
   try {
-    const { title, category, district, problemStatement, proposedSolution, budget, externalLinks, attachments } = req.body;
+    const { title, category, district, problemStatement, proposedSolution, budget, funding, externalLinks, attachments } = req.body;
     if (!title || !category || !district || !problemStatement) {
       return res.status(400).json({ message: "Missing required project fields" });
     }
@@ -1339,8 +1380,8 @@ app.post("/api/projects", requireAuth, async (req, res, next) => {
     const now = Date.now();
 
     await pool.query(
-      `INSERT INTO projects (id, title, slug, category, district, author_id, problem_statement, proposed_solution, budget, created_at, updated_at, external_links, attachments)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      `INSERT INTO projects (id, title, slug, category, district, author_id, problem_statement, proposed_solution, budget, funding, created_at, updated_at, external_links, attachments)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         id,
         sanitizeText(title),
@@ -1351,6 +1392,7 @@ app.post("/api/projects", requireAuth, async (req, res, next) => {
         sanitizeText(problemStatement),
         sanitizeText(proposedSolution ?? ""),
         Number(budget) || 0,
+        sanitizeText(String(funding || "Self Funding")),
         now,
         now,
         Array.isArray(externalLinks) ? externalLinks : [],
@@ -1456,7 +1498,7 @@ app.put("/api/projects/:projectId", requireAuth, async (req, res, next) => {
       return res.status(403).json({ message: "Only the project author can edit this project" });
     }
 
-    const { title, category, district, problemStatement, proposedSolution, budget, externalLinks, attachments } = req.body;
+    const { title, category, district, problemStatement, proposedSolution, budget, funding, externalLinks, attachments } = req.body;
 
     // Save current state as a version snapshot before applying edits
     const currentVersion = row.versions || 1;
@@ -1480,6 +1522,7 @@ app.put("/api/projects/:projectId", requireAuth, async (req, res, next) => {
     const newProblem = sanitizeText(String(problemStatement ?? row.problem_statement).trim());
     const newSolution = sanitizeText(String(proposedSolution ?? row.proposed_solution).trim());
     const newBudget = budget !== undefined ? (Number(budget) || 0) : Number(row.budget);
+    const newFunding = funding !== undefined ? sanitizeText(String(funding).trim()) : (row.funding || "Self Funding");
     const newLinks = Array.isArray(externalLinks) ? externalLinks : (row.external_links || []);
     const newAttachments = Array.isArray(attachments) ? attachments : (row.attachments || []);
     const now = Date.now();
@@ -1487,9 +1530,9 @@ app.put("/api/projects/:projectId", requireAuth, async (req, res, next) => {
     await pool.query(
       `UPDATE projects
        SET title = $1, category = $2, district = $3, problem_statement = $4, proposed_solution = $5,
-           budget = $6, external_links = $7, attachments = $8, versions = $9, updated_at = $10
-       WHERE id = $11`,
-      [newTitle, newCategory, newDistrict, newProblem, newSolution, newBudget, newLinks, newAttachments, currentVersion + 1, now, projectId],
+           budget = $6, funding = $7, external_links = $8, attachments = $9, versions = $10, updated_at = $11
+       WHERE id = $12`,
+      [newTitle, newCategory, newDistrict, newProblem, newSolution, newBudget, newFunding, newLinks, newAttachments, currentVersion + 1, now, projectId],
     );
 
     const updatedRow = (await pool.query("SELECT * FROM projects WHERE id = $1", [projectId])).rows[0];

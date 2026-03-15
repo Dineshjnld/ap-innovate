@@ -9,6 +9,7 @@ export const CATEGORIES = [
   "Cyber Crime",
   "AI / Automation",
   "Community Policing",
+  "Others",
 ] as const;
 
 export const DISTRICTS = [
@@ -52,6 +53,7 @@ export interface Project {
   problemStatement: string;
   proposedSolution: string;
   budget: number;
+  funding: string;
   status: "draft" | "submitted" | "under_review" | "approved" | "rejected";
   approvedBy?: { name: string; rank: string; date: string; comment: string };
   createdAt: string;

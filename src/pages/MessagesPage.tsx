@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { MessageCircle, Send, Search, User, MoreVertical, Phone, Video, Plus, Smile } from "lucide-react";
+import { MessageCircle, Send, Search, User, MoreVertical, Plus, Smile } from "lucide-react";
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,7 @@ import {
   subscribeCurrentUserMessages,
   subscribeDiscoverUsers,
 } from "@/services/realtime";
+import { socketService, type PresenceInfo } from "@/services/socket";
 
 const MessagesPage = () => {
   const navigate = useNavigate();
@@ -26,7 +27,12 @@ const MessagesPage = () => {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [presence, setPresence] = useState<Map<string, PresenceInfo>>(new Map());
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const prevSelectedUserRef = useRef("");
 
   const currentUserId = session?.user.id ?? "";
 
@@ -44,12 +50,31 @@ const MessagesPage = () => {
     );
   }, [knownUsers, userSearchQuery]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = (instant?: boolean) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: instant ? "instant" : "smooth" });
+  };
+
+  const handleChatScroll = () => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   };
 
   useEffect(() => {
-    scrollToBottom();
+    if (selectedUserId !== prevSelectedUserRef.current) {
+      prevSelectedUserRef.current = selectedUserId;
+      setTimeout(() => scrollToBottom(true), 50);
+      return;
+    }
+    if (!messages.length) return;
+    const last = messages.filter(m =>
+      (m.from === currentUserId && m.to === selectedUserId) ||
+      (m.from === selectedUserId && m.to === currentUserId)
+    ).sort((a, b) => a.createdAt - b.createdAt);
+    const lastMsg = last[last.length - 1];
+    if (lastMsg?.from === currentUserId || isNearBottomRef.current) {
+      scrollToBottom();
+    }
   }, [messages, selectedUserId]);
 
   useEffect(() => {
@@ -62,6 +87,38 @@ const MessagesPage = () => {
     return subscribeDiscoverUsers((users) => {
       setDiscoverUsers(users);
     });
+  }, []);
+
+  // Subscribe to presence updates
+  useEffect(() => {
+    return socketService.onPresenceChange((p) => {
+      setPresence(new Map(p));
+    });
+  }, []);
+
+  // Subscribe to typing indicators
+  useEffect(() => {
+    const socket = socketService.getSocket();
+    const onTyping = (data: { from: string }) => {
+      if (data.from) {
+        setTypingUsers((prev) => new Set(prev).add(data.from));
+      }
+    };
+    const onStopTyping = (data: { from: string }) => {
+      if (data.from) {
+        setTypingUsers((prev) => {
+          const next = new Set(prev);
+          next.delete(data.from);
+          return next;
+        });
+      }
+    };
+    socket?.on("user-typing", onTyping);
+    socket?.on("user-stop-typing", onStopTyping);
+    return () => {
+      socket?.off("user-typing", onTyping);
+      socket?.off("user-stop-typing", onStopTyping);
+    };
   }, []);
 
   const conversations = useMemo(() => {
@@ -144,6 +201,40 @@ const MessagesPage = () => {
     setSearchParams({ to: userId });
   };
 
+  const isUserOnline = (userId: string) => presence.get(userId)?.status === "online";
+
+  const formatLastSeen = (userId: string): string => {
+    const info = presence.get(userId);
+    if (!info) return "Offline";
+    if (info.status === "online") return "Active Now";
+    if (!info.lastSeen) return "Offline";
+    const diff = Date.now() - info.lastSeen;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Last seen just now";
+    if (mins < 60) return `Last seen ${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `Last seen ${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days === 1) return "Last seen yesterday";
+    if (days < 7) return `Last seen ${days}d ago`;
+    return `Last seen ${new Date(info.lastSeen).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
+  };
+
+  // Emit typing events
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleDraftChange = (value: string) => {
+    setDraft(value);
+    if (selectedUserId && value.trim()) {
+      socketService.sendTyping(selectedUserId);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        socketService.sendStopTyping(selectedUserId);
+      }, 2000);
+    } else if (selectedUserId) {
+      socketService.sendStopTyping(selectedUserId);
+    }
+  };
+
   const formatTime = (ts: number) => {
     const d = new Date(ts);
     const now = new Date();
@@ -155,9 +246,9 @@ const MessagesPage = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fbff] dark:bg-slate-950">
-      <Header onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")} onSearchChange={() => undefined} />
+      <Header onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")} />
 
-      <main className="mx-auto max-w-7xl px-4 pt-[180px] pb-4 h-[calc(100vh-2rem)] flex flex-col">
+      <main className="mx-auto max-w-7xl px-2 pt-[140px] pb-2 h-screen flex flex-col">
         <div className="flex-1 flex overflow-hidden rounded-2xl border border-border bg-card shadow-2xl backdrop-blur-md">
 
           {/* Sidebar - Conversation List */}
@@ -207,7 +298,7 @@ const MessagesPage = () => {
                           {conv.user?.name[0]}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" />
+                      <div className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white dark:border-slate-900 ${isUserOnline(conv.peerId) ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`} />
                     </div>
                     <div className="flex-1 min-w-0 text-left">
                       <div className="flex justify-between items-baseline mb-0.5">
@@ -256,22 +347,25 @@ const MessagesPage = () => {
                 {/* Chat Header */}
                 <header className="p-4 border-b border-border flex items-center justify-between bg-white/80 dark:bg-slate-950/80 backdrop-blur-md z-10">
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10 shadow-sm ring-1 ring-border">
-                      <AvatarImage src={selectedUser?.avatar} />
-                      <AvatarFallback className="bg-navy text-white text-xs">{selectedUser?.name?.[0] || '?'}</AvatarFallback>
-                    </Avatar>
+                    <div className="relative">
+                      <Avatar className="h-10 w-10 shadow-sm ring-1 ring-border">
+                        <AvatarImage src={selectedUser?.avatar} />
+                        <AvatarFallback className="bg-navy text-white text-xs">{selectedUser?.name?.[0] || '?'}</AvatarFallback>
+                      </Avatar>
+                      <div className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-slate-900 ${isUserOnline(selectedUserId) ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"}`} />
+                    </div>
                     <div className="leading-tight">
                       <h2 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{selectedUser?.name || 'Officer'}</h2>
-                      <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-[0.1em]">Active Now</p>
+                      {typingUsers.has(selectedUserId) ? (
+                        <p className="text-[10px] font-bold text-gold uppercase tracking-[0.1em] animate-pulse">Typing...</p>
+                      ) : (
+                        <p className={`text-[10px] font-bold uppercase tracking-[0.1em] ${isUserOnline(selectedUserId) ? "text-emerald-500" : "text-slate-400"}`}>
+                          {formatLastSeen(selectedUserId)}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-400 hover:text-navy hover:bg-slate-100">
-                      <Phone className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-400 hover:text-navy hover:bg-slate-100">
-                      <Video className="h-4 w-4" />
-                    </Button>
                     <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-400 hover:text-navy hover:bg-slate-100">
                       <MoreVertical className="h-4 w-4" />
                     </Button>
@@ -279,7 +373,7 @@ const MessagesPage = () => {
                 </header>
 
                 {/* Messages Feed */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/30 dark:bg-slate-950/30 custom-scrollbar">
+                <div ref={chatContainerRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/30 dark:bg-slate-950/30 custom-scrollbar">
                   {chatMessages.map((msg, idx) => {
                     const mine = msg.from === currentUserId;
                     const prevMsg = chatMessages[idx - 1];
@@ -315,7 +409,7 @@ const MessagesPage = () => {
                       placeholder="Type a message..."
                       className="flex-1 border-none bg-transparent shadow-none min-h-[44px] max-h-32 focus-visible:ring-0 py-2.5 px-0 resize-none text-sm placeholder:text-slate-400"
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={(e) => handleDraftChange(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();

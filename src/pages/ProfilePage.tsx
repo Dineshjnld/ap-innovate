@@ -49,7 +49,7 @@ const ProfilePage = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [userProjects, setUserProjects] = useState<Project[]>([]);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-  const [editProject, setEditProject] = useState<Partial<{ title: string; category: string[]; district: string; problemStatement: string; proposedSolution: string; budget: string; externalLinks: string[]; attachments: string[] }>>({});
+  const [editProject, setEditProject] = useState<Partial<{ title: string; category: string[]; district: string; problemStatement: string; proposedSolution: string; budget: string; funding: string; externalLinks: string[]; attachments: string[] }>>({});
   const [isSavingProject, setIsSavingProject] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingProjectFiles, setIsUploadingProjectFiles] = useState(false);
@@ -248,6 +248,7 @@ const ProfilePage = () => {
       problemStatement: project.problemStatement,
       proposedSolution: project.proposedSolution,
       budget: String(project.budget || ""),
+      funding: project.funding || "Self Funding",
       externalLinks: [...(project.externalLinks || [])],
       attachments: [...(project.attachments || [])],
     });
@@ -271,6 +272,7 @@ const ProfilePage = () => {
         problemStatement: editProject.problemStatement,
         proposedSolution: editProject.proposedSolution,
         budget: Number(editProject.budget) || 0,
+        funding: editProject.funding || "Self Funding",
         externalLinks: editProject.externalLinks,
         attachments: editProject.attachments,
       });
@@ -324,7 +326,7 @@ const ProfilePage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")} onSearchChange={() => undefined} />
+      <Header onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")} />
       <main className="mx-auto max-w-6xl px-4 pt-40 pb-8">
         {!profile ? (
           <Card className="overflow-hidden border-border shadow-card">
@@ -653,6 +655,23 @@ const ProfilePage = () => {
                                     value={editProject.budget ?? ""}
                                     onChange={(e) => setEditProject((p) => ({ ...p, budget: e.target.value }))}
                                   />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Funding Source</label>
+                                  <select
+                                    aria-label="Funding Source"
+                                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                                    value={editProject.funding ?? "Self Funding"}
+                                    onChange={(e) => setEditProject((p) => ({ ...p, funding: e.target.value }))}
+                                  >
+                                    <option value="Self Funding">Self Funding</option>
+                                    <option value="Government Grant">Government Grant</option>
+                                    <option value="CSR Funding">CSR Funding</option>
+                                    <option value="Public-Private Partnership">Public-Private Partnership</option>
+                                    <option value="Departmental Budget">Departmental Budget</option>
+                                    <option value="External Donor">External Donor</option>
+                                    <option value="Other">Other</option>
+                                  </select>
                                 </div>
                                 <div>
                                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Attachments</label>

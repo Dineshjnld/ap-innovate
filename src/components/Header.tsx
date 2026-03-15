@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, Home, LogOut, MessageSquare, Search, Shield, User } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import type { MessageItem, NotificationItem } from "@/services/database";
@@ -10,13 +10,16 @@ import dgpLogo from "@/assets/dgp.png";
 
 interface HeaderProps {
   onNavigate: (page: "dashboard" | "create-project") => void;
-  onSearchChange: (value: string) => void;
+  onSearchChange?: (value: string) => void;
 }
 
 const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signOut, session } = useAuth();
   const [query, setQuery] = useState("");
+
+  const isOnHubPage = location.pathname === "/hub" || location.pathname === "/hub2" || location.pathname === "/";
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
@@ -109,22 +112,34 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
           )}
 
           <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-foreground/60" />
             <input
               type="text"
               placeholder="Search innovations, officers, districts..."
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                onSearchChange(event.target.value);
+                if (isOnHubPage && onSearchChange) {
+                  onSearchChange(event.target.value);
+                }
               }}
-              className="h-9 w-full rounded-md border border-navy-light bg-navy-light/40 pl-9 pr-10 text-sm text-primary-foreground placeholder:text-primary-foreground/50 outline-none focus:ring-2 focus:ring-gold/40"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !isOnHubPage && query.trim()) {
+                  navigate(`/hub?q=${encodeURIComponent(query.trim())}`);
+                }
+              }}
+              className="h-9 w-full rounded-md border border-navy-light bg-navy-light/40 pl-3 pr-9 text-sm text-primary-foreground placeholder:text-primary-foreground/50 outline-none focus:ring-2 focus:ring-gold/40"
             />
             <button
               type="button"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/80 hover:bg-navy-light"
-              aria-label="Run search"
-              onClick={() => onSearchChange(query)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/60 hover:text-primary-foreground hover:bg-navy-light transition-colors"
+              onClick={() => {
+                if (!query.trim()) return;
+                if (isOnHubPage && onSearchChange) {
+                  onSearchChange(query);
+                } else {
+                  navigate(`/hub?q=${encodeURIComponent(query.trim())}`);
+                }
+              }}
             >
               <Search className="h-4 w-4" />
             </button>

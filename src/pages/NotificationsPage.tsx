@@ -27,6 +27,9 @@ const NotificationsPage = () => {
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread'>('all');
 
   useEffect(() => {
+    // Mark all notifications as read when the page is opened
+    void markAllNotificationsAsRead();
+
     return subscribeCurrentUserNotifications((items) => {
       setNotifications(items);
     });
@@ -83,7 +86,7 @@ const NotificationsPage = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fbff] dark:bg-slate-950">
-      <Header onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")} onSearchChange={() => undefined} />
+      <Header onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")} />
 
       <main className="mx-auto max-w-4xl px-4 pt-[180px] pb-16">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">

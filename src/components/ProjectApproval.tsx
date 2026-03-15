@@ -21,7 +21,9 @@ const ProjectApproval = ({ project, onStatusUpdated }: ProjectApprovalProps) => 
     const userRank = session?.user.rank || "";
     const canApprove = (APPROVAL_RANKS as readonly string[]).includes(userRank);
 
+    // Hide if user can't approve, or project is already approved/rejected
     if (!canApprove) return null;
+    if (project.status === "approved" || project.status === "rejected") return null;
 
     const handleAction = async (status: Project["status"]) => {
         if (!comment.trim()) {

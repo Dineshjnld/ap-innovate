@@ -65,7 +65,6 @@ const ProjectPage = () => {
       <div className="min-h-screen bg-background">
         <Header
           onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")}
-          onSearchChange={() => undefined}
         />
         <div className="mx-auto max-w-5xl px-4 pt-40 pb-10">
           <div className="rounded-xl border border-border bg-card px-6 py-8 text-center text-muted-foreground">
@@ -80,7 +79,6 @@ const ProjectPage = () => {
     <div className="min-h-screen bg-background">
       <Header
         onNavigate={(target) => navigate(target === "dashboard" ? "/hub" : "/create")}
-        onSearchChange={() => undefined}
       />
       <main className="w-full px-4 pt-44 pb-6">
         <div className="flex flex-col lg:flex-row gap-4 items-start">

@@ -4,9 +4,18 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin
 
 type Callback = (...args: unknown[]) => void;
 
+export interface PresenceInfo {
+  status: "online" | "offline";
+  lastSeen?: number;
+}
+
+type PresenceListener = (presence: Map<string, PresenceInfo>) => void;
+
 class SocketService {
   private socket: Socket | null = null;
   private userId: string | null = null;
+  private presence: Map<string, PresenceInfo> = new Map();
+  private presenceListeners: Set<PresenceListener> = new Set();
 
   connect(userId?: string) {
     if (this.socket?.connected) {
@@ -31,6 +40,18 @@ class SocketService {
 
     this.socket.on("disconnect", () => {
       console.log("Socket disconnected");
+    });
+
+    this.socket.on("presence-snapshot", (snapshot: Record<string, PresenceInfo>) => {
+      for (const [uid, info] of Object.entries(snapshot)) {
+        this.presence.set(uid, info);
+      }
+      this.notifyPresenceListeners();
+    });
+
+    this.socket.on("presence-update", (update: { userId: string; status: "online" | "offline"; lastSeen?: number }) => {
+      this.presence.set(update.userId, { status: update.status, lastSeen: update.lastSeen });
+      this.notifyPresenceListeners();
     });
 
     if (userId) {
@@ -72,6 +93,26 @@ class SocketService {
 
   off(event: string, callback: Callback) {
     this.socket?.off(event, callback);
+  }
+
+  getPresence(): Map<string, PresenceInfo> {
+    return new Map(this.presence);
+  }
+
+  onPresenceChange(listener: PresenceListener): () => void {
+    this.presenceListeners.add(listener);
+    // Immediately fire with current state
+    listener(new Map(this.presence));
+    return () => {
+      this.presenceListeners.delete(listener);
+    };
+  }
+
+  private notifyPresenceListeners() {
+    const snapshot = new Map(this.presence);
+    for (const listener of this.presenceListeners) {
+      listener(snapshot);
+    }
   }
 
   disconnect() {
