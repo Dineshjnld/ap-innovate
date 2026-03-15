@@ -116,20 +116,20 @@
   }
 
   .live-flash-track {
-    animation: flash-stream 16s linear infinite;
+    animation: flash-stream 32s linear infinite;
     will-change: transform;
   }
 
   .live-flash-speed-fast {
-    animation-duration: 10s;
+    animation-duration: 20s;
   }
 
   .live-flash-speed-mid {
-    animation-duration: 12s;
+    animation-duration: 24s;
   }
 
   .live-flash-speed-slow {
-    animation-duration: 16s;
+    animation-duration: 32s;
   }
 
   .live-flash-track:hover {

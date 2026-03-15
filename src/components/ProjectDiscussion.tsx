@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { MessageSquareReply, Send, AtSign, User, Reply, ChevronDown, ChevronRight, Clock } from "lucide-react";
 import type { DiscussionComment, User as UserType } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
@@ -195,6 +196,7 @@ const CommentBubble = ({
   depth: number;
   onReply: (parentId: string, authorName: string) => void;
 }) => {
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
   const formattedContent = useMemo(() => {
@@ -220,7 +222,7 @@ const CommentBubble = ({
         {/* Comment */}
         <div className="group py-0.5">
           <div className="flex items-start gap-1.5">
-            <Avatar className="h-5 w-5 shrink-0 mt-0.5">
+            <Avatar className="h-5 w-5 shrink-0 mt-0.5 cursor-pointer" onClick={() => navigate(`/profile/${node.author.id}`)}>
               <AvatarImage src={node.author.avatar} />
               <AvatarFallback className="text-[8px] bg-primary/10 text-primary font-bold">
                 {node.author.name?.[0] ?? "?"}
@@ -230,7 +232,11 @@ const CommentBubble = ({
             <div className="flex-1 min-w-0">
               {/* Name + time inline */}
               <div className="flex items-baseline gap-1 flex-wrap">
-                <span className="text-[11px] font-bold text-foreground truncate">{node.author.name}</span>
+                <span
+                  className="text-[11px] font-bold text-foreground truncate cursor-pointer hover:text-primary hover:underline transition-colors"
+                  onClick={() => navigate(`/profile/${node.author.id}`)}
+                  role="link"
+                >{node.author.name}</span>
                 <span className="text-[8px] text-muted-foreground">{node.author.rank}</span>
                 <span className="text-[8px] text-muted-foreground/50 ml-auto shrink-0">
                   {node.createdAt ? timeAgo(node.createdAt) : "now"}
@@ -243,7 +249,7 @@ const CommentBubble = ({
               </div>
 
               {/* Actions bar */}
-              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => onReply(node.id, node.author.name)}
