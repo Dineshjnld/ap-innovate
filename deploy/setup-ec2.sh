@@ -51,6 +51,7 @@ sudo -u postgres psql -c "ALTER USER postgres PASSWORD '${DB_PASS}';" 2>/dev/nul
 sudo -u postgres psql -c "CREATE DATABASE ap_innovate;" 2>/dev/null || true
 echo "PostgreSQL ready."
 
+# ── 5. Ollama (Local AI) ────────────────────────────────────────
 # ── 5. Clone / Update repo ─────────────────────────────────────────
 echo "[5/7] Setting up application..."
 if [ -d "$APP_DIR" ]; then
@@ -63,7 +64,7 @@ fi
 
 npm ci
 
-# ── 6. Create server .env ──────────────────────────────────────────
+# ── 6. Create server .env ──────────────────────────────────────
 echo "[6/7] Configuring environment..."
 JWT_SECRET=$(openssl rand -hex 32)
 cat > server/.env <<EOF
@@ -137,4 +138,5 @@ echo "  Next steps:"
 echo "    1. Point your domain to this IP"
 echo "    2. Run: sudo certbot --nginx -d yourdomain.com"
 echo "    3. Seed data: node server/seed.mjs"
+echo "    4. AI model auto-downloads on first comparison (~80MB)"
 echo "═══════════════════════════════════════════════════════════════"

@@ -1,9 +1,12 @@
 import { useState, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { CATEGORIES, DISTRICTS } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Upload, Link as LinkIcon, X, FileText, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, Link as LinkIcon, X, FileText, Loader2, Brain } from "lucide-react";
 import type { CreateProjectInput } from "@/services/database";
 import { uploadFiles } from "@/services/realtime";
+import { compareProject } from "@/services/database";
+import ProjectComparisonModal, { type ComparisonResult } from "@/components/ProjectComparisonModal";
 import { toast } from "sonner";
 
 interface UploadedFile {
@@ -40,7 +43,12 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isComparing, setIsComparing] = useState(false);
+  const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [showComparison, setShowComparison] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) =>
@@ -92,6 +100,39 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
 
   const removeUploadedFile = (url: string) => {
     setUploadedFiles((prev) => prev.filter((f) => f.url !== url));
+  };
+
+  const handleCompare = async () => {
+    if (!title.trim() || !problem.trim()) {
+      setError("Title and Problem Statement are required to compare.");
+      return;
+    }
+    setError(null);
+    setComparisonError(null);
+    setComparisonResult(null);
+    setIsComparing(true);
+    setShowComparison(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    try {
+      const result = await compareProject({
+        title: title.trim(),
+        category: selectedCategories,
+        district,
+        problemStatement: problem.trim(),
+        proposedSolution: solution.trim(),
+        budget: budget.trim().length > 0 ? Number(budget) : 0,
+        funding: funding.trim() || "Self Funding",
+        officerInCharge: officerInCharge.trim(),
+        company: company.trim(),
+      });
+      setComparisonResult(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Comparison failed";
+      setComparisonError(message);
+    } finally {
+      setIsComparing(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -396,10 +437,20 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
             )}
           </div>
 
-          {/* Submit */}
+          {/* Compare & Submit */}
           <div className="flex gap-3 pt-4 border-t border-border">
             <Button type="button" variant="outline" onClick={onBack} className="flex-1">
               Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isComparing || isSubmitting}
+              onClick={handleCompare}
+              className="flex-1 gap-2 border-info text-info hover:bg-info/10 font-semibold"
+            >
+              {isComparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              {isComparing ? "Comparing..." : "AI Compare"}
             </Button>
             <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gold text-navy-dark hover:bg-gold-dark font-semibold">
               {isSubmitting ? "Submitting..." : "Submit Innovation"}
@@ -407,6 +458,18 @@ const CreateProjectForm = ({ onBack, onSubmit }: CreateProjectFormProps) => {
           </div>
         </form>
       </div>
+
+      <ProjectComparisonModal
+        isOpen={showComparison}
+        onClose={() => setShowComparison(false)}
+        result={comparisonResult}
+        isLoading={isComparing}
+        error={comparisonError}
+        onNavigateToProject={(projectId) => {
+          setShowComparison(false);
+          navigate(`/project/${projectId}`);
+        }}
+      />
     </div>
   );
 };

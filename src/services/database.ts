@@ -222,6 +222,14 @@ export const createProject = async (input: CreateProjectInput): Promise<Project>
   return response.json();
 };
 
+export const compareProject = async (input: Partial<CreateProjectInput>) => {
+  const response = await fetchWithAuth("/api/ai/compare-projects", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return response.json();
+};
+
 export const subscribeProjectComments = (
   projectId: string,
   onData: (items: DiscussionComment[]) => void,

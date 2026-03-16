@@ -15,6 +15,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { pipeline, env as transformersEnv } from "@xenova/transformers";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG
@@ -1955,6 +1956,160 @@ app.get("/api/stats", requireAuth, async (req, res, next) => {
       totalComments: Number(comments.rows[0].c),
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AI PROJECT COMPARISON (HuggingFace Embeddings — in-process)
+   Uses all-MiniLM-L6-v2 sentence-transformer (~80MB) for semantic similarity.
+   No external services needed — runs entirely inside Node.js.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Cache embeddings model globally so it loads once
+transformersEnv.cacheDir = path.resolve(__dirname, ".cache", "models");
+let embeddingPipeline = null;
+
+async function getEmbedder() {
+  if (!embeddingPipeline) {
+    console.log("[AI] Loading sentence-transformer model (first request may take 30-60s)...");
+    embeddingPipeline = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+    console.log("[AI] Model loaded successfully.");
+  }
+  return embeddingPipeline;
+}
+
+function cosineSimilarity(a, b) {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function projectToText(p) {
+  const parts = [p.title];
+  if (p.category?.length) parts.push(Array.isArray(p.category) ? p.category.join(", ") : p.category);
+  if (p.district) parts.push(p.district);
+  if (p.problemStatement) parts.push(p.problemStatement);
+  if (p.proposedSolution) parts.push(p.proposedSolution);
+  return parts.join(". ");
+}
+
+function generateReason(newProj, existing, similarity) {
+  const reasons = [];
+  const newCats = new Set(Array.isArray(newProj.category) ? newProj.category.map(c => c.toLowerCase()) : []);
+  const existCats = new Set(Array.isArray(existing.category) ? existing.category.map(c => c.toLowerCase()) : []);
+  const commonCats = [...newCats].filter(c => existCats.has(c));
+  if (commonCats.length > 0) reasons.push(`Shared categories: ${commonCats.join(", ")}`);
+  if (newProj.district && existing.district && newProj.district.toLowerCase() === existing.district.toLowerCase()) {
+    reasons.push(`Same district: ${existing.district}`);
+  }
+  if (similarity >= 0.7) reasons.push("Very similar problem statement and solution approach");
+  else if (similarity >= 0.5) reasons.push("Overlapping problem domain and objectives");
+  else if (similarity >= 0.3) reasons.push("Some thematic overlap in scope");
+  else reasons.push("Minor topical relevance detected");
+  return reasons.join(". ") + ".";
+}
+
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many AI comparison requests, please wait." },
+});
+
+app.post("/api/ai/compare-projects", requireAuth, aiLimiter, async (req, res, next) => {
+  try {
+    const { title, category, district, problemStatement, proposedSolution } = req.body;
+    if (!title || !problemStatement) {
+      return res.status(400).json({ message: "Title and problem statement are required for comparison." });
+    }
+
+    // Fetch existing projects
+    const result = await pool.query(
+      "SELECT id, title, slug, category, district, problem_statement, proposed_solution, budget, funding, status, created_at FROM projects ORDER BY created_at DESC LIMIT 200"
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ matches: [], summary: "No existing projects found to compare against." });
+    }
+
+    const existingProjects = result.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      slug: row.slug,
+      category: row.category,
+      district: row.district,
+      problemStatement: row.problem_statement,
+      proposedSolution: row.proposed_solution,
+      budget: Number(row.budget),
+      funding: row.funding,
+      status: row.status,
+    }));
+
+    // Build text representations
+    const newProjectObj = { title, category, district, problemStatement, proposedSolution };
+    const newText = projectToText(newProjectObj);
+    const existingTexts = existingProjects.map(projectToText);
+
+    // Get embeddings
+    const embedder = await getEmbedder();
+    const allTexts = [newText, ...existingTexts];
+    const embeddings = [];
+    for (const text of allTexts) {
+      const output = await embedder(text, { pooling: "mean", normalize: true });
+      embeddings.push(Array.from(output.data));
+    }
+
+    const newEmbedding = embeddings[0];
+
+    // Calculate similarity scores
+    const scored = existingProjects.map((proj, idx) => {
+      const sim = cosineSimilarity(newEmbedding, embeddings[idx + 1]);
+      const pct = Math.round(Math.max(0, Math.min(100, sim * 100)));
+      return { project: proj, similarity: sim, likelihoodPercentage: pct };
+    });
+
+    // Filter and sort
+    const matches = scored
+      .filter((s) => s.likelihoodPercentage >= 20)
+      .sort((a, b) => b.likelihoodPercentage - a.likelihoodPercentage)
+      .slice(0, 10)
+      .map((s) => ({
+        projectId: s.project.id,
+        projectTitle: s.project.title,
+        projectSlug: s.project.slug,
+        projectCategory: s.project.category || [],
+        projectDistrict: s.project.district || "",
+        projectStatus: s.project.status || "",
+        likelihoodPercentage: s.likelihoodPercentage,
+        reason: generateReason(newProjectObj, s.project, s.similarity),
+      }));
+
+    // Generate summary
+    let summary;
+    if (matches.length === 0) {
+      summary = "No significantly similar projects found. Your innovation appears to be unique.";
+    } else {
+      const topMatch = matches[0];
+      summary = `Found ${matches.length} similar project${matches.length > 1 ? "s" : ""}. `
+        + `The closest match is \"${topMatch.projectTitle}\" at ${topMatch.likelihoodPercentage}% similarity. `
+        + (topMatch.likelihoodPercentage >= 60
+            ? "Consider reviewing the existing project before submitting."
+            : "Your project has enough unique aspects to proceed.");
+    }
+
+    return res.json({
+      matches,
+      summary,
+      model: "all-MiniLM-L6-v2 (HuggingFace)",
+    });
+  } catch (err) {
+    console.error("[AI] Comparison error:", err.message);
     next(err);
   }
 });
