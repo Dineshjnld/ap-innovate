@@ -1,5 +1,5 @@
 
-# AP Police Innovation Hub
+# AP POLICE Innovation Hub
 
 A production-grade full-stack platform for Andhra Pradesh Police officers to submit, discover, discuss, and approve innovation projects across districts. Features real-time messaging, project collaboration, multi-tier approval workflows, and a live activity feed — all powered by PostgreSQL full-text search and WebSocket events.
 

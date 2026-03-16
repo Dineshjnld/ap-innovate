@@ -55,7 +55,7 @@ const LandingPage = () => {
           <div className="grid h-20 grid-cols-3 items-center">
             <img src={apPoliceLogo} alt="AP Police" className="justify-self-start h-12 w-12 sm:h-14 sm:w-14 object-contain" />
             <p className="justify-self-center text-base sm:text-2xl font-bold text-primary-foreground font-display whitespace-nowrap">
-              AP Police Innovation Hub
+              AP POLICE Innovation Hub
             </p>
             <img src={dgpLogo} alt="DGP" className="justify-self-end h-12 w-12 sm:h-14 sm:w-14 rounded-md object-cover border border-gold/30" />
           </div>

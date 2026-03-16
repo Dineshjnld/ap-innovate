@@ -64,7 +64,7 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
             className="justify-self-center"
           >
             <h1 className="text-base sm:text-2xl font-bold leading-tight text-primary-foreground font-display text-center whitespace-nowrap">
-              AP Police Innovation Hub
+              AP POLICE Innovation Hub
             </h1>
           </button>
 

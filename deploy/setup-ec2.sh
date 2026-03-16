@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-#  AP Police Innovation Hub — AWS EC2 Deployment Script
+#  AP POLICE Innovation Hub — AWS EC2 Deployment Script
 #  Run this ON the EC2 instance after SSH'ing in.
 #
 #  Usage:
@@ -14,7 +14,7 @@ APP_DIR="/home/ubuntu/ap-innovate"
 REPO_URL="https://github.com/Dineshjnld/ap-innovate.git"
 
 echo "═══════════════════════════════════════════════════════════════"
-echo "  AP Police Innovation Hub — EC2 Setup"
+echo "  AP POLICE Innovation Hub — EC2 Setup"
 echo "═══════════════════════════════════════════════════════════════"
 
 # ── 1. System packages ─────────────────────────────────────────────

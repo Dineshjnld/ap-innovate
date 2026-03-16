@@ -83,7 +83,7 @@ const SignInPage = () => {
       <header className="relative z-10 flex items-center justify-between px-6 py-4 max-w-5xl mx-auto w-full">
         <img src={apPoliceLogo} alt="AP Police" className="h-11 w-11 object-contain drop-shadow-lg" />
         <div className="text-center">
-          <p className="text-base font-bold tracking-wide text-white font-display">AP Police Innovation Hub</p>
+          <p className="text-base font-bold tracking-wide text-white font-display">AP POLICE Innovation Hub</p>
           <p className="text-[11px] text-slate-400 tracking-widest uppercase">PRISM · Secure Portal</p>
         </div>
         <img src={dgpLogo} alt="DGP" className="h-11 w-11 rounded-lg object-cover shadow-lg" />

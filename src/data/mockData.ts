@@ -1,4 +1,4 @@
-// Mock data for the AP Police Innovation Hub
+// Mock data for the AP POLICE Innovation Hub
 
 export const CATEGORIES = [
   "Technology Innovation",
