@@ -531,6 +531,31 @@ Output: `dist/` directory — serve with any static file server (Nginx, Caddy, e
 
 ---
 
+## Monitoring
+
+This repo includes an open-source monitoring stack under [deploy/monitoring/README.md](deploy/monitoring/README.md):
+
+- Grafana OSS
+- Prometheus
+- Node Exporter
+- Postgres Exporter
+
+Quick start on the VM:
+
+```bash
+cd ~/ap-innovate/deploy/monitoring
+cp .env.monitoring.example .env.monitoring
+nano .env.monitoring
+docker compose -f docker-compose.monitoring.yml up -d
+```
+
+Default endpoints:
+
+- Grafana: `http://YOUR_VM_IP:3000`
+- Prometheus: `http://YOUR_VM_IP:9090`
+
+---
+
 ## Scripts
 
 | Command | Description |

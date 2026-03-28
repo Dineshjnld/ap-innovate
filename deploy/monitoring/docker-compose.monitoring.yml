@@ -1,0 +1,56 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.4.2
+    container_name: ap-innovate-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana-oss:11.6.0
+    container_name: ap-innovate-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-this-grafana-password}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.8.2
+    container_name: ap-innovate-node-exporter
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: ap-innovate-postgres-exporter
+    restart: unless-stopped
+    env_file:
+      - .env.monitoring
+    environment:
+      DATA_SOURCE_URI: ${POSTGRES_EXPORTER_URI:-host.docker.internal:5432/ap_innovate?sslmode=disable}
+      DATA_SOURCE_USER: ${POSTGRES_EXPORTER_USER:-postgres}
+      DATA_SOURCE_PASS: ${POSTGRES_EXPORTER_PASS}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  prometheus-data:
+  grafana-data:
