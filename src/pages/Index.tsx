@@ -15,6 +15,29 @@ import {
 } from "@/services/projectsApi";
 import { subscribeDiscoverUsers } from "@/services/realtime";
 
+const DASHBOARD_CACHE_KEYS = {
+  projects: "apih_dashboard_projects",
+  allProjects: "apih_dashboard_all_projects",
+  users: "apih_dashboard_users",
+};
+
+const readCached = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) as T : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeCached = (key: string, value: unknown) => {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore cache write issues
+  }
+};
+
 const Index = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -30,10 +53,10 @@ const Index = () => {
       setSearchParams(searchParams, { replace: true });
     }
   }, []);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [allProjects, setAllProjects] = useState<Project[]>([]);
-  const [discoverUsers, setDiscoverUsers] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [projects, setProjects] = useState<Project[]>(() => readCached(DASHBOARD_CACHE_KEYS.projects, []));
+  const [allProjects, setAllProjects] = useState<Project[]>(() => readCached(DASHBOARD_CACHE_KEYS.allProjects, []));
+  const [discoverUsers, setDiscoverUsers] = useState<User[]>(() => readCached(DASHBOARD_CACHE_KEYS.users, []));
+  const [isLoading, setIsLoading] = useState(() => readCached(DASHBOARD_CACHE_KEYS.projects, []).length === 0);
   const autoSelectedRef = useRef(false);
 
   useEffect(() => {
@@ -53,6 +76,7 @@ const Index = () => {
       },
       (result) => {
         setProjects(result);
+        writeCached(DASHBOARD_CACHE_KEYS.projects, result);
         setIsLoading(false);
       },
     );
@@ -63,12 +87,14 @@ const Index = () => {
   useEffect(() => {
     return subscribeAllProjectsLive((result) => {
       setAllProjects(result);
+      writeCached(DASHBOARD_CACHE_KEYS.allProjects, result);
     });
   }, []);
 
   useEffect(() => {
     return subscribeDiscoverUsers((users) => {
       setDiscoverUsers(users);
+      writeCached(DASHBOARD_CACHE_KEYS.users, users);
     });
   }, []);
 

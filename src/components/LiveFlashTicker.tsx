@@ -9,6 +9,24 @@ interface LiveFlashTickerProps {
 }
 
 const MAX_STREAM_ITEMS = 12;
+const FLASH_CACHE_KEY = "apih_live_flash_items";
+
+const readCachedFeed = (): FeedItem[] => {
+  try {
+    const raw = window.sessionStorage.getItem(FLASH_CACHE_KEY);
+    return raw ? JSON.parse(raw) as FeedItem[] : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeCachedFeed = (items: FeedItem[]) => {
+  try {
+    window.sessionStorage.setItem(FLASH_CACHE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore cache write issues
+  }
+};
 
 // Only project-level actions — no comments
 const isProjectActivity = (item: FeedItem) =>
@@ -42,7 +60,7 @@ const relativeTime = (iso: string): string => {
 };
 
 const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
-  const [items, setItems] = useState<FeedItem[]>([]);
+  const [items, setItems] = useState<FeedItem[]>(() => readCachedFeed());
 
   useEffect(() => {
     const socket = socketService.getSocket();
@@ -51,7 +69,9 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
       if (!isProjectActivity(activity)) return;
       setItems((prev) => {
         if (prev.some((a) => a.id === activity.id)) return prev;
-        return [...prev, activity];
+        const next = [...prev, activity];
+        writeCachedFeed(next);
+        return next;
       });
     };
 
@@ -64,7 +84,9 @@ const LiveFlashTicker = ({ onOpenProject }: LiveFlashTickerProps) => {
 
   useEffect(() => {
     return subscribeActivityFeed((feed) => {
-      setItems(feed.filter(isProjectActivity));
+      const filtered = feed.filter(isProjectActivity);
+      setItems(filtered);
+      writeCachedFeed(filtered);
     });
   }, []);
 
