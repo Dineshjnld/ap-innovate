@@ -1969,6 +1969,13 @@ app.get("/api/stats", requireAuth, async (req, res, next) => {
 // Cache embeddings model globally so it loads once
 transformersEnv.cacheDir = path.resolve(__dirname, ".cache", "models");
 let embeddingPipeline = null;
+const COMPARISON_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how",
+  "in", "is", "it", "of", "on", "or", "that", "the", "their", "this", "to",
+  "was", "we", "will", "with", "your", "you", "our", "project", "innovation",
+  "new", "improve", "improving", "policing", "police", "system", "platform",
+  "solution", "problem", "proposal", "idea", "app", "application",
+]);
 
 async function getEmbedder() {
   if (!embeddingPipeline) {
@@ -1989,28 +1996,125 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function projectToText(p) {
-  const parts = [p.title];
-  if (p.category?.length) parts.push(Array.isArray(p.category) ? p.category.join(", ") : p.category);
-  if (p.district) parts.push(p.district);
-  if (p.problemStatement) parts.push(p.problemStatement);
-  if (p.proposedSolution) parts.push(p.proposedSolution);
-  return parts.join(". ");
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
-function generateReason(newProj, existing, similarity) {
+function normalizeText(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenize(text) {
+  return normalizeText(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(token => token.length >= 3 && !COMPARISON_STOP_WORDS.has(token));
+}
+
+function getKeywordSet(project) {
+  return new Set([
+    ...tokenize(project.title),
+    ...tokenize(project.problemStatement),
+    ...tokenize(project.proposedSolution),
+  ]);
+}
+
+function jaccardSimilarity(setA, setB) {
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let overlap = 0;
+  for (const item of setA) {
+    if (setB.has(item)) overlap += 1;
+  }
+  return overlap / (setA.size + setB.size - overlap);
+}
+
+function isInformativeText(text, { minChars = 12, minTokens = 3 } = {}) {
+  const normalized = normalizeText(text);
+  const tokens = tokenize(normalized);
+  const uniqueChars = new Set(normalized.toLowerCase()).size;
+  return normalized.length >= minChars && tokens.length >= minTokens && uniqueChars >= 4;
+}
+
+function getSubmissionQuality(project) {
+  const titleOk = isInformativeText(project.title, { minChars: 8, minTokens: 2 });
+  const problemOk = isInformativeText(project.problemStatement, { minChars: 30, minTokens: 6 });
+  const solutionOk = isInformativeText(project.proposedSolution, { minChars: 20, minTokens: 4 });
+  const informativeFields = [titleOk, problemOk, solutionOk].filter(Boolean).length;
+  const totalKeywordCount = getKeywordSet(project).size;
+
+  return {
+    titleOk,
+    problemOk,
+    solutionOk,
+    informativeFields,
+    totalKeywordCount,
+    isTooThin: informativeFields < 2 || totalKeywordCount < 8,
+  };
+}
+
+function projectToSemanticText(p) {
+  const parts = [];
+  if (normalizeText(p.title)) parts.push(`Title: ${normalizeText(p.title)}`);
+  if (normalizeText(p.problemStatement)) parts.push(`Problem: ${normalizeText(p.problemStatement)}`);
+  if (normalizeText(p.proposedSolution)) parts.push(`Solution: ${normalizeText(p.proposedSolution)}`);
+  return parts.join("\n");
+}
+
+function calibrateSemanticSimilarity(rawCosine) {
+  // MiniLM cosine scores tend to have a non-trivial baseline even for loosely related text.
+  return clamp((rawCosine - 0.35) / 0.45, 0, 1);
+}
+
+function computeProjectMatch(newProj, existing, rawCosine) {
+  const newCats = new Set(Array.isArray(newProj.category) ? newProj.category.map(c => c.toLowerCase()) : []);
+  const existCats = new Set(Array.isArray(existing.category) ? existing.category.map(c => c.toLowerCase()) : []);
+  const keywordOverlap = jaccardSimilarity(getKeywordSet(newProj), getKeywordSet(existing));
+  const categoryOverlap = jaccardSimilarity(newCats, existCats);
+  const districtBoost = newProj.district && existing.district
+    && newProj.district.toLowerCase() === existing.district.toLowerCase()
+      ? 0.04
+      : 0;
+
+  const calibratedSemantic = calibrateSemanticSimilarity(rawCosine);
+  const combined = clamp(
+    calibratedSemantic * 0.78
+      + keywordOverlap * 0.17
+      + categoryOverlap * 0.05
+      + districtBoost,
+    0,
+    1,
+  );
+
+  return {
+    rawCosine,
+    calibratedSemantic,
+    keywordOverlap,
+    categoryOverlap,
+    districtBoost,
+    likelihoodPercentage: Math.round(combined * 100),
+  };
+}
+
+function generateReason(newProj, existing, score) {
   const reasons = [];
   const newCats = new Set(Array.isArray(newProj.category) ? newProj.category.map(c => c.toLowerCase()) : []);
   const existCats = new Set(Array.isArray(existing.category) ? existing.category.map(c => c.toLowerCase()) : []);
   const commonCats = [...newCats].filter(c => existCats.has(c));
+  const sharedKeywords = [...getKeywordSet(newProj)].filter(token => getKeywordSet(existing).has(token)).slice(0, 4);
+
   if (commonCats.length > 0) reasons.push(`Shared categories: ${commonCats.join(", ")}`);
   if (newProj.district && existing.district && newProj.district.toLowerCase() === existing.district.toLowerCase()) {
     reasons.push(`Same district: ${existing.district}`);
   }
-  if (similarity >= 0.7) reasons.push("Very similar problem statement and solution approach");
-  else if (similarity >= 0.5) reasons.push("Overlapping problem domain and objectives");
-  else if (similarity >= 0.3) reasons.push("Some thematic overlap in scope");
-  else reasons.push("Minor topical relevance detected");
+  if (sharedKeywords.length > 0) reasons.push(`Shared keywords: ${sharedKeywords.join(", ")}`);
+
+  if (score.likelihoodPercentage >= 70) reasons.push("Strong overlap in problem framing and solution approach");
+  else if (score.likelihoodPercentage >= 50) reasons.push("Noticeable overlap in use case and proposed direction");
+  else if (score.keywordOverlap >= 0.12 || score.categoryOverlap > 0) reasons.push("Related theme, but likely a distinct submission");
+  else reasons.push("Weak overlap after structured comparison");
   return reasons.join(". ") + ".";
 }
 
@@ -2051,12 +2155,19 @@ app.post("/api/ai/compare-projects", requireAuth, aiLimiter, async (req, res, ne
       status: row.status,
     }));
 
-    // Build text representations
     const newProjectObj = { title, category, district, problemStatement, proposedSolution };
-    const newText = projectToText(newProjectObj);
-    const existingTexts = existingProjects.map(projectToText);
+    const quality = getSubmissionQuality(newProjectObj);
+    if (quality.isTooThin) {
+      return res.json({
+        matches: [],
+        summary: "Add a more descriptive title, problem statement, and solution before running AI Compare. The current draft is too short or generic to produce a reliable similarity score.",
+        model: "all-MiniLM-L6-v2 + structured validation",
+      });
+    }
 
-    // Get embeddings
+    const newText = projectToSemanticText(newProjectObj);
+    const existingTexts = existingProjects.map(projectToSemanticText);
+
     const embedder = await getEmbedder();
     const allTexts = [newText, ...existingTexts];
     const embeddings = [];
@@ -2067,18 +2178,16 @@ app.post("/api/ai/compare-projects", requireAuth, aiLimiter, async (req, res, ne
 
     const newEmbedding = embeddings[0];
 
-    // Calculate similarity scores
     const scored = existingProjects.map((proj, idx) => {
-      const sim = cosineSimilarity(newEmbedding, embeddings[idx + 1]);
-      const pct = Math.round(Math.max(0, Math.min(100, sim * 100)));
-      return { project: proj, similarity: sim, likelihoodPercentage: pct };
+      const rawCosine = cosineSimilarity(newEmbedding, embeddings[idx + 1]);
+      const score = computeProjectMatch(newProjectObj, proj, rawCosine);
+      return { project: proj, ...score };
     });
 
-    // Filter and sort
     const matches = scored
-      .filter((s) => s.likelihoodPercentage >= 20)
+      .filter((s) => s.likelihoodPercentage >= 35)
       .sort((a, b) => b.likelihoodPercentage - a.likelihoodPercentage)
-      .slice(0, 10)
+      .slice(0, 8)
       .map((s) => ({
         projectId: s.project.id,
         projectTitle: s.project.title,
@@ -2087,26 +2196,25 @@ app.post("/api/ai/compare-projects", requireAuth, aiLimiter, async (req, res, ne
         projectDistrict: s.project.district || "",
         projectStatus: s.project.status || "",
         likelihoodPercentage: s.likelihoodPercentage,
-        reason: generateReason(newProjectObj, s.project, s.similarity),
+        reason: generateReason(newProjectObj, s.project, s),
       }));
 
-    // Generate summary
     let summary;
     if (matches.length === 0) {
-      summary = "No significantly similar projects found. Your innovation appears to be unique.";
+      summary = "No strong overlaps found after structured comparison. Your innovation appears distinct enough to proceed.";
     } else {
       const topMatch = matches[0];
       summary = `Found ${matches.length} similar project${matches.length > 1 ? "s" : ""}. `
         + `The closest match is \"${topMatch.projectTitle}\" at ${topMatch.likelihoodPercentage}% similarity. `
         + (topMatch.likelihoodPercentage >= 60
             ? "Consider reviewing the existing project before submitting."
-            : "Your project has enough unique aspects to proceed.");
+            : "The overlap looks limited enough to proceed.");
     }
 
     return res.json({
       matches,
       summary,
-      model: "all-MiniLM-L6-v2 (HuggingFace)",
+      model: "all-MiniLM-L6-v2 + structured hybrid scoring",
     });
   } catch (err) {
     console.error("[AI] Comparison error:", err.message);

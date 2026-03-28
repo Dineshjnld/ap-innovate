@@ -10,7 +10,9 @@
 
 set -euo pipefail
 
-APP_DIR="/home/ubuntu/ap-innovate"
+APP_USER="${SUDO_USER:-$USER}"
+APP_HOME="$(eval echo "~${APP_USER}")"
+APP_DIR="${APP_HOME}/ap-innovate"
 REPO_URL="https://github.com/Dineshjnld/ap-innovate.git"
 
 echo "═══════════════════════════════════════════════════════════════"
@@ -123,7 +125,7 @@ sudo systemctl enable nginx
 pm2 delete ap-innovate 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 pm2 save
-pm2 startup systemd -u ubuntu --hp /home/ubuntu | tail -1 | sudo bash
+pm2 startup systemd -u "$APP_USER" --hp "$APP_HOME" | tail -1 | sudo bash
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
