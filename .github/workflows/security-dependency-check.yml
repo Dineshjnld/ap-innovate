@@ -1,0 +1,50 @@
+name: Security - Dependency Check
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - package-lock.json
+      - bun.lock
+      - bun.lockb
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create report directories
+        run: mkdir -p .reports/odc-data .reports/odc-report
+
+      - name: Pull OWASP Dependency-Check image
+        run: docker pull owasp/dependency-check:latest
+
+      - name: Run OWASP Dependency-Check
+        run: >
+          docker run --rm
+          -e user=root
+          -v "${{ github.workspace }}:/src"
+          -v "${{ github.workspace }}/.reports/odc-data:/usr/share/dependency-check/data"
+          -v "${{ github.workspace }}/.reports/odc-report:/report"
+          owasp/dependency-check:latest
+          --scan /src
+          --project "ap-innovate"
+          --format "HTML"
+          --format "JSON"
+          --out /report
+          --failOnCVSS 7
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: .reports/odc-report

@@ -556,6 +556,24 @@ Default endpoints:
 
 ---
 
+## Security
+
+This repo also includes an open-source security baseline under [deploy/security/README.md](deploy/security/README.md):
+
+- CrowdSec with Nginx/AppSec for low-latency inline protection
+- Wazuh agent install script for host monitoring and suspicious activity detection
+- GitHub Actions for Trivy, OWASP Dependency-Check, and OWASP ZAP baseline scans
+
+Key files:
+
+- [deploy/security/install-crowdsec-nginx.sh](deploy/security/install-crowdsec-nginx.sh)
+- [deploy/security/install-wazuh-agent.sh](deploy/security/install-wazuh-agent.sh)
+- [.github/workflows/security-trivy.yml](.github/workflows/security-trivy.yml)
+- [.github/workflows/security-dependency-check.yml](.github/workflows/security-dependency-check.yml)
+- [.github/workflows/security-zap-baseline.yml](.github/workflows/security-zap-baseline.yml)
+
+---
+
 ## Scripts
 
 | Command | Description |

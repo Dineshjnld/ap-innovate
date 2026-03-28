@@ -1,0 +1,3 @@
+# Default ZAP baseline rules file.
+# Set rule actions to IGNORE only after reviewing and documenting the reason.
+# Format: rule_id<TAB>ACTION<TAB>optional note
