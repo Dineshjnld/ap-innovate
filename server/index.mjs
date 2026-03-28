@@ -1977,6 +1977,14 @@ const COMPARISON_STOP_WORDS = new Set([
   "new", "improve", "improving", "policing", "police", "system", "platform",
   "solution", "problem", "proposal", "idea", "app", "application",
 ]);
+const COMPARISON_CONCEPT_PATTERNS = [
+  { concept: "pilgrim_monitoring", patterns: [/piligr/i, /pilgrim/i, /temple/i, /tirumala/i, /darshan/i] },
+  { concept: "face_recognition", patterns: [/face recognition/i, /facial recognition/i, /face detect/i, /facial detect/i] },
+  { concept: "video_surveillance", patterns: [/cctv/i, /camera/i, /surveillance/i, /monitoring/i, /video feed/i] },
+  { concept: "theft_prevention", patterns: [/theft/i, /stolen/i, /stealing/i, /pickpocket/i, /snatch/i] },
+  { concept: "crowd_management", patterns: [/crowd/i, /footfall/i, /queue/i, /congestion/i] },
+  { concept: "anomaly_detection", patterns: [/anomaly/i, /alert/i, /detect/i, /tracking/i, /track/i] },
+];
 
 async function getEmbedder() {
   if (!embeddingPipeline) {
@@ -2015,11 +2023,28 @@ function tokenize(text) {
     .filter(token => token.length >= 3 && !COMPARISON_STOP_WORDS.has(token));
 }
 
+function extractConcepts(text) {
+  const normalized = normalizeText(text).toLowerCase();
+  const concepts = [];
+  for (const { concept, patterns } of COMPARISON_CONCEPT_PATTERNS) {
+    if (patterns.some(pattern => pattern.test(normalized))) {
+      concepts.push(concept);
+    }
+  }
+  return concepts;
+}
+
 function getKeywordSet(project) {
+  const combinedText = [
+    normalizeText(project.title),
+    normalizeText(project.problemStatement),
+    normalizeText(project.proposedSolution),
+  ].join(" ");
   return new Set([
     ...tokenize(project.title),
     ...tokenize(project.problemStatement),
     ...tokenize(project.proposedSolution),
+    ...extractConcepts(combinedText),
   ]);
 }
 
@@ -2072,8 +2097,14 @@ function calibrateSemanticSimilarity(rawCosine) {
 function computeProjectMatch(newProj, existing, rawCosine) {
   const newCats = new Set(Array.isArray(newProj.category) ? newProj.category.map(c => c.toLowerCase()) : []);
   const existCats = new Set(Array.isArray(existing.category) ? existing.category.map(c => c.toLowerCase()) : []);
-  const keywordOverlap = jaccardSimilarity(getKeywordSet(newProj), getKeywordSet(existing));
+  const newKeywordSet = getKeywordSet(newProj);
+  const existingKeywordSet = getKeywordSet(existing);
+  const keywordOverlap = jaccardSimilarity(newKeywordSet, existingKeywordSet);
   const categoryOverlap = jaccardSimilarity(newCats, existCats);
+  const conceptOverlap = jaccardSimilarity(
+    new Set([...newKeywordSet].filter(token => token.includes("_"))),
+    new Set([...existingKeywordSet].filter(token => token.includes("_"))),
+  );
   const districtBoost = newProj.district && existing.district
     && newProj.district.toLowerCase() === existing.district.toLowerCase()
       ? 0.04
@@ -2081,8 +2112,9 @@ function computeProjectMatch(newProj, existing, rawCosine) {
 
   const calibratedSemantic = calibrateSemanticSimilarity(rawCosine);
   const combined = clamp(
-    calibratedSemantic * 0.78
-      + keywordOverlap * 0.17
+    calibratedSemantic * 0.65
+      + keywordOverlap * 0.12
+      + conceptOverlap * 0.18
       + categoryOverlap * 0.05
       + districtBoost,
     0,
@@ -2093,6 +2125,7 @@ function computeProjectMatch(newProj, existing, rawCosine) {
     rawCosine,
     calibratedSemantic,
     keywordOverlap,
+    conceptOverlap,
     categoryOverlap,
     districtBoost,
     likelihoodPercentage: Math.round(combined * 100),
@@ -2104,17 +2137,21 @@ function generateReason(newProj, existing, score) {
   const newCats = new Set(Array.isArray(newProj.category) ? newProj.category.map(c => c.toLowerCase()) : []);
   const existCats = new Set(Array.isArray(existing.category) ? existing.category.map(c => c.toLowerCase()) : []);
   const commonCats = [...newCats].filter(c => existCats.has(c));
-  const sharedKeywords = [...getKeywordSet(newProj)].filter(token => getKeywordSet(existing).has(token)).slice(0, 4);
+  const newKeywordSet = getKeywordSet(newProj);
+  const existingKeywordSet = getKeywordSet(existing);
+  const sharedKeywords = [...newKeywordSet].filter(token => existingKeywordSet.has(token) && !token.includes("_")).slice(0, 4);
+  const sharedConcepts = [...newKeywordSet].filter(token => existingKeywordSet.has(token) && token.includes("_")).slice(0, 3);
 
   if (commonCats.length > 0) reasons.push(`Shared categories: ${commonCats.join(", ")}`);
   if (newProj.district && existing.district && newProj.district.toLowerCase() === existing.district.toLowerCase()) {
     reasons.push(`Same district: ${existing.district}`);
   }
+  if (sharedConcepts.length > 0) reasons.push(`Shared concepts: ${sharedConcepts.map(token => token.replace(/_/g, " ")).join(", ")}`);
   if (sharedKeywords.length > 0) reasons.push(`Shared keywords: ${sharedKeywords.join(", ")}`);
 
   if (score.likelihoodPercentage >= 70) reasons.push("Strong overlap in problem framing and solution approach");
   else if (score.likelihoodPercentage >= 50) reasons.push("Noticeable overlap in use case and proposed direction");
-  else if (score.keywordOverlap >= 0.12 || score.categoryOverlap > 0) reasons.push("Related theme, but likely a distinct submission");
+  else if (score.conceptOverlap > 0 || score.keywordOverlap >= 0.08 || score.categoryOverlap > 0) reasons.push("Related theme, but likely a distinct submission");
   else reasons.push("Weak overlap after structured comparison");
   return reasons.join(". ") + ".";
 }
