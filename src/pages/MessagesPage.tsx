@@ -165,13 +165,6 @@ const MessagesPage = () => {
   const chatMessages = useMemo(() => selectedConversation?.items ?? [], [selectedConversation]);
 
   useEffect(() => {
-    const unknownPeerIds = conversations.filter(c => !c.user).map(c => c.peerId);
-    if (unknownPeerIds.length > 0) {
-      void subscribeDiscoverUsers((users) => setDiscoverUsers(users));
-    }
-  }, [conversations]);
-
-  useEffect(() => {
     if (!selectedUserId) return;
     const hasUnread = chatMessages.some((item) => item.to === currentUserId && !item.read);
     if (!hasUnread) return;
@@ -183,11 +176,15 @@ const MessagesPage = () => {
     setIsSending(true);
     const text = draft;
     setDraft("");
-    const result = await sendCurrentUserMessage({ to: selectedUserId, text });
-    setIsSending(false);
-    if (!result) {
+
+    try {
+      await sendCurrentUserMessage({ to: selectedUserId, text });
+      socketService.sendStopTyping(selectedUserId);
+    } catch {
       setDraft(text);
       toast.error("Unable to send message");
+    } finally {
+      setIsSending(false);
     }
   };
 

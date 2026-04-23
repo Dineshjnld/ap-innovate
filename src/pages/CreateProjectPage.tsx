@@ -18,21 +18,27 @@ const CreateProjectPage = () => {
         <CreateProjectForm
           onBack={() => navigate("/hub")}
           onSubmit={async (input) => {
-            const created = await createProject(input);
-            if (!created) {
-              toast.error("Unable to submit innovation", {
-                description: "Please try again after confirming your session.",
+            try {
+              const created = await createProject(input);
+              if (!created) {
+                toast.error("Unable to submit innovation", {
+                  description: "Please try again after confirming your session.",
+                });
+                return;
+              }
+
+              const current = session?.user.innovationsCount ?? 0;
+              updateProfile({ innovationsCount: current + 1 });
+
+              toast.success("Innovation submitted successfully", {
+                description: "Project moved to submitted state and sent for approval workflow.",
               });
-              return;
+              navigate("/hub");
+            } catch (error) {
+              toast.error("Unable to submit innovation", {
+                description: error instanceof Error ? error.message : "Please try again after confirming your session.",
+              });
             }
-
-            const current = session?.user.innovationsCount ?? 0;
-            updateProfile({ innovationsCount: current + 1 });
-
-            toast.success("Innovation submitted successfully", {
-              description: "Project moved to submitted state and sent for approval workflow.",
-            });
-            navigate("/hub");
           }}
         />
       </main>

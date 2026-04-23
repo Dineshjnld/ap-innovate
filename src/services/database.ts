@@ -5,6 +5,7 @@ import {
   type DiscussionComment,
 } from "@/data/mockData";
 import { getAuthHeaders, getSession, refreshAuthSession } from "@/services/auth";
+import { socketService } from "@/services/socket";
 
 /* ─── Types & Config ─────────────────────────────────────────────────────── */
 
@@ -49,6 +50,7 @@ type Unsubscribe = () => void;
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 const POLL_INTERVAL_MS = Number(import.meta.env.VITE_REALTIME_POLL_MS ?? "4000");
+const MESSAGE_RESYNC_INTERVAL_MS = Math.max(POLL_INTERVAL_MS * 4, 15000);
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -65,15 +67,22 @@ const buildUrl = (path: string, query?: Record<string, string>) => {
 };
 
 async function fetchWithAuth(path: string, options: RequestInit = {}, query?: Record<string, string>): Promise<Response> {
-  const doRequest = () =>
-    fetch(buildUrl(path, query), {
+  const doRequest = () => {
+    const headers = {
+      ...getAuthHeaders(),
+      ...options.headers,
+    };
+
+    // Let the browser set multipart boundaries automatically for FormData uploads.
+    if (!(options.body instanceof FormData) && !("Content-Type" in headers)) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    return fetch(buildUrl(path, query), {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeaders(),
-        ...options.headers,
-      },
+      headers,
     });
+  };
 
   let response = await doRequest();
 
@@ -114,22 +123,207 @@ const makePollSubscription = <T>(
   return () => { active = false; window.clearInterval(timer); };
 };
 
+const normalizeMessages = (items: MessageItem[]): MessageItem[] => {
+  const map = new Map<string, MessageItem>();
+
+  for (const item of items) {
+    const existing = map.get(item.id);
+    map.set(
+      item.id,
+      existing
+        ? {
+            ...existing,
+            ...item,
+            read: existing.read || item.read,
+          }
+        : item,
+    );
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt);
+};
+
+const messagesAreEqual = (left: MessageItem[], right: MessageItem[]) => {
+  if (left.length !== right.length) return false;
+
+  return left.every((item, index) => {
+    const other = right[index];
+    return (
+      item.id === other.id &&
+      item.from === other.from &&
+      item.to === other.to &&
+      item.text === other.text &&
+      item.createdAt === other.createdAt &&
+      item.read === other.read
+    );
+  });
+};
+
+let activeMessagesUserId: string | null = null;
+let cachedMessages: MessageItem[] = [];
+let messageListeners = new Set<(messages: MessageItem[]) => void>();
+let messageSocketCleanup: Unsubscribe | null = null;
+let messageResyncTimer: number | null = null;
+let messageSyncPromise: Promise<void> | null = null;
+let hasLoadedMessages = false;
+
+const emitMessageSnapshot = () => {
+  const snapshot = cachedMessages.map((item) => ({ ...item }));
+  for (const listener of messageListeners) {
+    listener(snapshot);
+  }
+};
+
+const updateCachedMessages = (nextItems: MessageItem[]) => {
+  const normalized = normalizeMessages(nextItems);
+  if (messagesAreEqual(cachedMessages, normalized)) return;
+  cachedMessages = normalized;
+  emitMessageSnapshot();
+};
+
+const mergeMessagesIntoCache = (incoming: MessageItem | MessageItem[]) => {
+  const items = Array.isArray(incoming) ? incoming : [incoming];
+  updateCachedMessages([...cachedMessages, ...items]);
+};
+
+const markConversationAsReadInCache = (userId: string, peerId: string) => {
+  let changed = false;
+
+  const nextItems = cachedMessages.map((item) => {
+    if (item.to === userId && item.from === peerId && !item.read) {
+      changed = true;
+      return { ...item, read: true };
+    }
+    return item;
+  });
+
+  if (changed) {
+    updateCachedMessages(nextItems);
+  }
+};
+
+const stopMessageFeed = () => {
+  if (messageResyncTimer !== null) {
+    window.clearInterval(messageResyncTimer);
+    messageResyncTimer = null;
+  }
+
+  messageSocketCleanup?.();
+  messageSocketCleanup = null;
+  messageSyncPromise = null;
+};
+
+const stopMessageFeedIfIdle = () => {
+  if (messageListeners.size > 0) return;
+  stopMessageFeed();
+};
+
+const resetMessageFeedForUser = (userId: string | null) => {
+  if (activeMessagesUserId === userId) return;
+
+  const hadMessages = cachedMessages.length > 0;
+
+  stopMessageFeed();
+  activeMessagesUserId = userId;
+  cachedMessages = [];
+  hasLoadedMessages = false;
+
+  if (hadMessages && messageListeners.size > 0) {
+    emitMessageSnapshot();
+  }
+};
+
+const syncCurrentUserMessages = async (force = false) => {
+  const currentUserId = getSession()?.user.id ?? null;
+
+  if (!currentUserId) {
+    resetMessageFeedForUser(null);
+    return;
+  }
+
+  resetMessageFeedForUser(currentUserId);
+
+  if (messageSyncPromise && !force) {
+    return messageSyncPromise;
+  }
+
+  messageSyncPromise = (async () => {
+    try {
+      const items = await getJson<MessageItem[]>("/api/messages/me");
+      hasLoadedMessages = true;
+      updateCachedMessages(items);
+    } catch (error) {
+      if (!hasLoadedMessages) {
+        updateCachedMessages([]);
+      }
+      throw error;
+    } finally {
+      messageSyncPromise = null;
+    }
+  })();
+
+  return messageSyncPromise;
+};
+
+const ensureMessageFeedStarted = () => {
+  const currentUserId = getSession()?.user.id ?? null;
+
+  if (!currentUserId) {
+    resetMessageFeedForUser(null);
+    return;
+  }
+
+  resetMessageFeedForUser(currentUserId);
+
+  if (!messageSocketCleanup) {
+    const socket = socketService.getSocket();
+
+    const onMessageReceived = (message: MessageItem) => {
+      if (!message?.id) return;
+      mergeMessagesIntoCache(message);
+    };
+
+    const onMessagesRead = (payload: { userId?: string; peerId?: string }) => {
+      if (!payload?.userId || !payload?.peerId) return;
+      markConversationAsReadInCache(payload.userId, payload.peerId);
+    };
+
+    const onReconnect = () => {
+      void syncCurrentUserMessages(true).catch(() => undefined);
+    };
+
+    socket?.on("message-received", onMessageReceived);
+    socket?.on("messages-read", onMessagesRead);
+    socket?.on("connect", onReconnect);
+
+    messageSocketCleanup = () => {
+      socket?.off("message-received", onMessageReceived);
+      socket?.off("messages-read", onMessagesRead);
+      socket?.off("connect", onReconnect);
+    };
+  }
+
+  if (messageResyncTimer === null) {
+    messageResyncTimer = window.setInterval(() => {
+      void syncCurrentUserMessages().catch(() => undefined);
+    }, MESSAGE_RESYNC_INTERVAL_MS);
+  }
+
+  if (!hasLoadedMessages) {
+    void syncCurrentUserMessages(true).catch(() => undefined);
+  }
+};
+
 /* ─── Upload helper ──────────────────────────────────────────────────────── */
 
 export const uploadFiles = async (files: File[]): Promise<{ url: string; originalName: string; size: number }[]> => {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
 
-  const response = await fetch(buildUrl("/api/upload"), {
+  const response = await fetchWithAuth("/api/upload", {
     method: "POST",
-    headers: { ...getAuthHeaders() },
     body: formData,
   });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ message: "Upload failed" }));
-    throw new Error(body.message ?? "Upload failed");
-  }
 
   const data = await response.json();
   return data.files.map((f: { url: string; originalName: string; size: number }) => ({
@@ -143,16 +337,10 @@ export const uploadAvatar = async (file: File): Promise<User> => {
   const formData = new FormData();
   formData.append("avatar", file);
 
-  const response = await fetch(buildUrl("/api/users/me/avatar"), {
+  const response = await fetchWithAuth("/api/users/me/avatar", {
     method: "POST",
-    headers: { ...getAuthHeaders() },
     body: formData,
   });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ message: "Avatar upload failed" }));
-    throw new Error(body.message ?? "Avatar upload failed");
-  }
 
   return response.json();
 };
@@ -263,17 +451,45 @@ export const updateCurrentUserProfile = async (input: { name?: string; district?
 };
 
 export const subscribeCurrentUserMessages = (onData: (messages: MessageItem[]) => void): Unsubscribe =>
-  makePollSubscription(async () => {
-    try { return await getJson<MessageItem[]>("/api/messages/me"); } catch { return []; }
-  }, onData, 4000);
+{
+  const currentUserId = getSession()?.user.id ?? null;
+
+  if (!currentUserId) {
+    onData([]);
+    return () => undefined;
+  }
+
+  resetMessageFeedForUser(currentUserId);
+  messageListeners.add(onData);
+  onData(cachedMessages.map((item) => ({ ...item })));
+  ensureMessageFeedStarted();
+
+  return () => {
+    messageListeners.delete(onData);
+    stopMessageFeedIfIdle();
+  };
+};
 
 export const sendCurrentUserMessage = async (input: { to: string; text: string }): Promise<MessageItem> => {
   const response = await fetchWithAuth("/api/messages/me", { method: "POST", body: JSON.stringify(input) });
-  return response.json();
+  const message = await response.json();
+  mergeMessagesIntoCache(message);
+  return message;
 };
 
 export const markConversationMessagesAsRead = async (peerId: string) => {
-  await fetchWithAuth("/api/messages/me/read", { method: "POST", body: JSON.stringify({ peerId }) });
+  const currentUserId = getSession()?.user.id;
+
+  if (currentUserId) {
+    markConversationAsReadInCache(currentUserId, peerId);
+  }
+
+  try {
+    await fetchWithAuth("/api/messages/me/read", { method: "POST", body: JSON.stringify({ peerId }) });
+  } catch (error) {
+    void syncCurrentUserMessages(true).catch(() => undefined);
+    throw error;
+  }
 };
 
 export const subscribeCurrentUserNotifications = (onData: (notifications: NotificationItem[]) => void): Unsubscribe =>

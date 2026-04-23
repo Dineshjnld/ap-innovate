@@ -349,10 +349,20 @@ const initDb = async (retries = 3) => {
     );
   `);
 
-  // Add funding column if missing (migration for existing DBs)
+  // Add project columns if missing (migration for existing DBs)
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS funding TEXT NOT NULL DEFAULT 'Self Funding'`).catch(() => {});
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS officer_in_charge TEXT NOT NULL DEFAULT ''`).catch(() => {});
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS company TEXT DEFAULT ''`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'submitted'`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS approved_by_name TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS approved_by_rank TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS approved_at BIGINT`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS approval_comment TEXT`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS attachments TEXT[] DEFAULT '{}'`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS external_links TEXT[] DEFAULT '{}'`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS comments_count INTEGER DEFAULT 0`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS versions INTEGER DEFAULT 1`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS search_vector TSVECTOR`).catch(() => {});
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS comments (
@@ -1379,36 +1389,53 @@ app.get("/api/projects", requireAuth, async (req, res, next) => {
 app.post("/api/projects", requireAuth, async (req, res, next) => {
   try {
     const { title, category, district, problemStatement, proposedSolution, budget, funding, officerInCharge, company, externalLinks, attachments } = req.body;
-    if (!title || !category || !district || !problemStatement || !officerInCharge) {
+    const cleanTitle = sanitizeText(String(title ?? "").trim());
+    const cleanCategory = Array.isArray(category)
+      ? category.map(s => sanitizeText(String(s).trim())).filter(Boolean)
+      : [sanitizeText(String(category ?? "").trim())].filter(Boolean);
+    const cleanDistrict = sanitizeText(String(district ?? "").trim());
+    const cleanProblem = sanitizeText(String(problemStatement ?? "").trim());
+    const cleanSolution = sanitizeText(String(proposedSolution ?? "").trim());
+    const cleanFunding = sanitizeText(String(funding || "Self Funding").trim()) || "Self Funding";
+    const cleanOfficerInCharge = sanitizeText(String(officerInCharge ?? "").trim());
+    const cleanCompany = sanitizeText(String(company || "").trim());
+    const cleanExternalLinks = Array.isArray(externalLinks)
+      ? externalLinks.map(link => String(link).trim()).filter(Boolean)
+      : [];
+    const cleanAttachments = Array.isArray(attachments)
+      ? attachments.map(file => String(file).trim()).filter(Boolean)
+      : [];
+
+    if (!cleanTitle || cleanCategory.length === 0 || !cleanDistrict || !cleanProblem || !cleanOfficerInCharge) {
       return res.status(400).json({ message: "Missing required project fields" });
     }
 
     const id = makeId("p");
-    const slug = await makeUniqueSlug(title);
+    const slug = await makeUniqueSlug(cleanTitle);
     const now = Date.now();
 
     await pool.query(
       `INSERT INTO projects (id, title, slug, category, district, author_id, problem_statement, proposed_solution, budget, funding, officer_in_charge, company, created_at, updated_at, external_links, attachments)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
-        id,
-        sanitizeText(title),
-        slug,
-        Array.isArray(category) ? category.map(s => sanitizeText(String(s))) : [sanitizeText(String(category))],
-        sanitizeText(district),
-        req.userId,
-        sanitizeText(problemStatement),
-        sanitizeText(proposedSolution ?? ""),
-        Number(budget) || 0,
-        sanitizeText(String(funding || "Self Funding")),
-        sanitizeText(String(officerInCharge)),
-        sanitizeText(String(company || "")),
-        now,
-        now,
-        Array.isArray(externalLinks) ? externalLinks : [],
-        Array.isArray(attachments) ? attachments : [],
-      ],
-    );
+          id,
+          cleanTitle,
+          slug,
+          cleanCategory,
+          cleanDistrict,
+          req.userId,
+          cleanProblem,
+          cleanSolution,
+          Number(budget) || 0,
+          cleanFunding,
+          cleanOfficerInCharge,
+          cleanCompany,
+          now,
+          now,
+          cleanExternalLinks,
+          cleanAttachments,
+        ],
+      );
 
     await pool.query("UPDATE users SET innovations_count = innovations_count + 1 WHERE id = $1", [req.userId]);
 
@@ -1416,7 +1443,7 @@ app.post("/api/projects", requireAuth, async (req, res, next) => {
     const author = await findUserById(req.userId);
     const project = toProject(row, author);
 
-    await createActivity(req.userId, "submitted a new innovation", title, id);
+    await createActivity(req.userId, "submitted a new innovation", cleanTitle, id);
 
     io.emit("project-created", project);
     return res.status(201).json(project);
@@ -1821,7 +1848,10 @@ app.get("/api/activities", requireAuth, async (req, res, next) => {
 app.get("/api/messages/me", requireAuth, async (req, res, next) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM messages WHERE from_user_id = $1 OR to_user_id = $1 ORDER BY created_at ASC",
+      `SELECT id, from_user_id, to_user_id, text, created_at, is_read
+       FROM messages
+       WHERE from_user_id = $1 OR to_user_id = $1
+       ORDER BY created_at ASC`,
       [req.userId],
     );
 
@@ -1859,8 +1889,9 @@ app.post("/api/messages/me", requireAuth, async (req, res, next) => {
 
     const message = { id, from: req.userId, to, text: sanitizedText, createdAt: now, read: false };
 
-    // Real-time delivery to recipient
+    // Real-time delivery to recipient and sender (for multi-tab sync).
     io.to(`user:${to}`).emit("message-received", message);
+    io.to(`user:${req.userId}`).emit("message-received", message);
 
     if (to !== req.userId) {
       const sender = await findUserById(req.userId);
@@ -1878,10 +1909,16 @@ app.post("/api/messages/me/read", requireAuth, async (req, res, next) => {
     const { peerId } = req.body;
     if (!peerId) return res.status(400).json({ message: "Peer ID is required" });
 
-    await pool.query(
+    const result = await pool.query(
       "UPDATE messages SET is_read = TRUE WHERE to_user_id = $1 AND from_user_id = $2 AND is_read = FALSE",
       [req.userId, peerId],
     );
+
+    if (result.rowCount > 0) {
+      const payload = { userId: req.userId, peerId };
+      io.to(`user:${req.userId}`).emit("messages-read", payload);
+      io.to(`user:${peerId}`).emit("messages-read", payload);
+    }
 
     return res.json({ ok: true });
   } catch (err) {
