@@ -3,8 +3,8 @@ import { Bell, Home, LogOut, MessageSquare, Search, Shield, User } from "lucide-
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
-import type { MessageItem, NotificationItem } from "@/services/database";
-import { subscribeCurrentUserMessages, subscribeCurrentUserNotifications } from "@/services/realtime";
+import type { MessageConversationSummary, NotificationItem } from "@/services/database";
+import { subscribeCurrentUserConversations, subscribeCurrentUserNotifications } from "@/services/realtime";
 import apPoliceLogo from "@/assets/ap-police-logo.png";
 import dgpLogo from "@/assets/dgp.png";
 
@@ -24,14 +24,8 @@ const Header = ({ onNavigate, onSearchChange }: HeaderProps) => {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
-    const stopMessages = subscribeCurrentUserMessages((items: MessageItem[]) => {
-      const currentUserId = session?.user.id;
-      if (!currentUserId) {
-        setUnreadMessages(0);
-        return;
-      }
-
-      const count = items.filter((item) => item.to === currentUserId && !item.read).length;
+    const stopMessages = subscribeCurrentUserConversations((items: MessageConversationSummary[]) => {
+      const count = items.reduce((sum, item) => sum + item.unreadCount, 0);
       setUnreadMessages(count);
     });
 

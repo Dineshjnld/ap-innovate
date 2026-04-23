@@ -38,6 +38,34 @@ export interface MessageItem {
   read: boolean;
 }
 
+export interface MessageConversationSummary {
+  peerId: string;
+  peer: User;
+  lastMessage: MessageItem;
+  unreadCount: number;
+}
+
+export interface MessageConversationResponse {
+  peer: User;
+  messages: MessageItem[];
+  hasMore: boolean;
+}
+
+export interface ProfileOverview {
+  user: User;
+  stats: {
+    followersCount: number;
+    connectionsCount: number;
+    innovationsCount: number;
+  };
+  relationship: {
+    isOwnProfile: boolean;
+    isFollowing: boolean;
+    connectionStatus: "none" | "requested" | "incoming-request" | "connected";
+  };
+  projects: Project[];
+}
+
 export interface NotificationItem {
   id: string;
   title: string;
@@ -314,6 +342,241 @@ const ensureMessageFeedStarted = () => {
   }
 };
 
+const cloneConversationSummary = (item: MessageConversationSummary): MessageConversationSummary => ({
+  ...item,
+  peer: { ...item.peer },
+  lastMessage: { ...item.lastMessage },
+});
+
+const normalizeConversationSummaries = (items: MessageConversationSummary[]) => {
+  const map = new Map<string, MessageConversationSummary>();
+
+  for (const item of items) {
+    const existing = map.get(item.peerId);
+
+    if (!existing || existing.lastMessage.createdAt <= item.lastMessage.createdAt) {
+      map.set(item.peerId, {
+        ...item,
+        unreadCount: Math.max(item.unreadCount, existing?.unreadCount ?? 0),
+      });
+      continue;
+    }
+
+    map.set(item.peerId, {
+      ...existing,
+      unreadCount: Math.max(existing.unreadCount, item.unreadCount),
+    });
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.lastMessage.createdAt - a.lastMessage.createdAt);
+};
+
+const conversationSummariesAreEqual = (left: MessageConversationSummary[], right: MessageConversationSummary[]) => {
+  if (left.length !== right.length) return false;
+
+  return left.every((item, index) => {
+    const other = right[index];
+    return (
+      item.peerId === other.peerId &&
+      item.unreadCount === other.unreadCount &&
+      item.peer.id === other.peer.id &&
+      item.peer.name === other.peer.name &&
+      item.peer.avatar === other.peer.avatar &&
+      item.lastMessage.id === other.lastMessage.id &&
+      item.lastMessage.from === other.lastMessage.from &&
+      item.lastMessage.to === other.lastMessage.to &&
+      item.lastMessage.text === other.lastMessage.text &&
+      item.lastMessage.createdAt === other.lastMessage.createdAt &&
+      item.lastMessage.read === other.lastMessage.read
+    );
+  });
+};
+
+let activeConversationUserId: string | null = null;
+let cachedConversations: MessageConversationSummary[] = [];
+let conversationListeners = new Set<(items: MessageConversationSummary[]) => void>();
+let conversationSocketCleanup: Unsubscribe | null = null;
+let conversationResyncTimer: number | null = null;
+let conversationSyncPromise: Promise<void> | null = null;
+let hasLoadedConversations = false;
+
+const emitConversationSnapshot = () => {
+  const snapshot = cachedConversations.map(cloneConversationSummary);
+  for (const listener of conversationListeners) {
+    listener(snapshot);
+  }
+};
+
+const updateCachedConversations = (nextItems: MessageConversationSummary[]) => {
+  const normalized = normalizeConversationSummaries(nextItems);
+  if (conversationSummariesAreEqual(cachedConversations, normalized)) return;
+  cachedConversations = normalized;
+  emitConversationSnapshot();
+};
+
+const stopConversationFeed = () => {
+  if (conversationResyncTimer !== null) {
+    window.clearInterval(conversationResyncTimer);
+    conversationResyncTimer = null;
+  }
+
+  conversationSocketCleanup?.();
+  conversationSocketCleanup = null;
+  conversationSyncPromise = null;
+};
+
+const stopConversationFeedIfIdle = () => {
+  if (conversationListeners.size > 0) return;
+  stopConversationFeed();
+};
+
+const resetConversationFeedForUser = (userId: string | null) => {
+  if (activeConversationUserId === userId) return;
+
+  const hadConversations = cachedConversations.length > 0;
+
+  stopConversationFeed();
+  activeConversationUserId = userId;
+  cachedConversations = [];
+  hasLoadedConversations = false;
+
+  if (hadConversations && conversationListeners.size > 0) {
+    emitConversationSnapshot();
+  }
+};
+
+const upsertConversationFromMessage = (currentUserId: string, message: MessageItem) => {
+  const peerId = message.from === currentUserId ? message.to : message.from;
+  const existing = cachedConversations.find((item) => item.peerId === peerId);
+
+  if (!existing) {
+    void syncCurrentUserConversations(true).catch(() => undefined);
+    return;
+  }
+
+  const nextConversation: MessageConversationSummary = {
+    ...existing,
+    lastMessage: { ...message },
+    unreadCount:
+      message.to === currentUserId
+        ? existing.unreadCount + 1
+        : existing.unreadCount,
+  };
+
+  updateCachedConversations([
+    nextConversation,
+    ...cachedConversations.filter((item) => item.peerId !== peerId),
+  ]);
+};
+
+const applyReadReceiptToConversations = (currentUserId: string, payload: { userId?: string; peerId?: string }) => {
+  if (!payload.userId || !payload.peerId) return;
+
+  const nextItems = cachedConversations.map((item) => {
+    if (currentUserId === payload.userId && item.peerId === payload.peerId) {
+      return {
+        ...item,
+        unreadCount: 0,
+        lastMessage:
+          item.lastMessage.to === currentUserId || item.lastMessage.from === payload.peerId
+            ? { ...item.lastMessage, read: true }
+            : item.lastMessage,
+      };
+    }
+
+    if (currentUserId === payload.peerId && item.peerId === payload.userId && item.lastMessage.from === currentUserId) {
+      return {
+        ...item,
+        lastMessage: { ...item.lastMessage, read: true },
+      };
+    }
+
+    return item;
+  });
+
+  updateCachedConversations(nextItems);
+};
+
+const syncCurrentUserConversations = async (force = false) => {
+  const currentUserId = getSession()?.user.id ?? null;
+
+  if (!currentUserId) {
+    resetConversationFeedForUser(null);
+    return;
+  }
+
+  resetConversationFeedForUser(currentUserId);
+
+  if (conversationSyncPromise && !force) {
+    return conversationSyncPromise;
+  }
+
+  conversationSyncPromise = (async () => {
+    try {
+      const items = await getJson<MessageConversationSummary[]>("/api/messages/conversations");
+      hasLoadedConversations = true;
+      updateCachedConversations(items);
+    } catch (error) {
+      if (!hasLoadedConversations) {
+        updateCachedConversations([]);
+      }
+      throw error;
+    } finally {
+      conversationSyncPromise = null;
+    }
+  })();
+
+  return conversationSyncPromise;
+};
+
+const ensureConversationFeedStarted = () => {
+  const currentUserId = getSession()?.user.id ?? null;
+
+  if (!currentUserId) {
+    resetConversationFeedForUser(null);
+    return;
+  }
+
+  resetConversationFeedForUser(currentUserId);
+
+  if (!conversationSocketCleanup) {
+    const socket = socketService.getSocket();
+
+    const onMessageReceived = (message: MessageItem) => {
+      if (!message?.id) return;
+      upsertConversationFromMessage(currentUserId, message);
+    };
+
+    const onMessagesRead = (payload: { userId?: string; peerId?: string }) => {
+      applyReadReceiptToConversations(currentUserId, payload);
+    };
+
+    const onReconnect = () => {
+      void syncCurrentUserConversations(true).catch(() => undefined);
+    };
+
+    socket?.on("message-received", onMessageReceived);
+    socket?.on("messages-read", onMessagesRead);
+    socket?.on("connect", onReconnect);
+
+    conversationSocketCleanup = () => {
+      socket?.off("message-received", onMessageReceived);
+      socket?.off("messages-read", onMessagesRead);
+      socket?.off("connect", onReconnect);
+    };
+  }
+
+  if (conversationResyncTimer === null) {
+    conversationResyncTimer = window.setInterval(() => {
+      void syncCurrentUserConversations().catch(() => undefined);
+    }, MESSAGE_RESYNC_INTERVAL_MS);
+  }
+
+  if (!hasLoadedConversations) {
+    void syncCurrentUserConversations(true).catch(() => undefined);
+  }
+};
+
 /* ─── Upload helper ──────────────────────────────────────────────────────── */
 
 export const uploadFiles = async (files: File[]): Promise<{ url: string; originalName: string; size: number }[]> => {
@@ -377,8 +640,68 @@ export const fetchUserById = async (userId: string): Promise<User | null> => {
   }
 };
 
+export const fetchCurrentUserProfileOverview = async (): Promise<ProfileOverview | null> => {
+  try {
+    return await getJson<ProfileOverview>("/api/users/me/overview");
+  } catch {
+    return null;
+  }
+};
+
+export const fetchUserProfileOverview = async (userId: string): Promise<ProfileOverview | null> => {
+  try {
+    return await getJson<ProfileOverview>(`/api/users/${userId}/overview`);
+  } catch {
+    return null;
+  }
+};
+
+export const fetchCurrentUserConversations = async (): Promise<MessageConversationSummary[]> => {
+  try {
+    const items = await getJson<MessageConversationSummary[]>("/api/messages/conversations");
+    hasLoadedConversations = true;
+    updateCachedConversations(items);
+    return items;
+  } catch {
+    return [];
+  }
+};
+
 export const subscribeDiscoverUsers = (onData: (users: User[]) => void, search = ""): Unsubscribe =>
   makePollSubscription(() => fetchDiscoverUsers(search), onData, 7000);
+
+export const subscribeCurrentUserConversations = (onData: (items: MessageConversationSummary[]) => void): Unsubscribe => {
+  const currentUserId = getSession()?.user.id ?? null;
+
+  if (!currentUserId) {
+    onData([]);
+    return () => undefined;
+  }
+
+  resetConversationFeedForUser(currentUserId);
+  conversationListeners.add(onData);
+  onData(cachedConversations.map(cloneConversationSummary));
+  ensureConversationFeedStarted();
+
+  return () => {
+    conversationListeners.delete(onData);
+    stopConversationFeedIfIdle();
+  };
+};
+
+export const fetchConversationMessages = async (
+  peerId: string,
+  options?: { before?: number; limit?: number },
+): Promise<MessageConversationResponse | null> => {
+  try {
+    const query: Record<string, string> = {};
+    if (options?.before) query.before = String(options.before);
+    if (options?.limit) query.limit = String(options.limit);
+    return await getJson<MessageConversationResponse>(`/api/messages/conversations/${peerId}`, query);
+  } catch {
+    return null;
+  }
+};
 
 export const subscribeProjects = (
   query: ProjectFilterQuery,

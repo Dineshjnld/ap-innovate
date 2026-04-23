@@ -162,4 +162,86 @@
   .shadow-card-hover {
     box-shadow: 0 10px 25px -5px hsl(222 60% 18% / 0.1), 0 8px 10px -6px hsl(222 60% 18% / 0.08);
   }
+
+  .liquid-page {
+    background:
+      radial-gradient(circle at top left, hsl(45 90% 88% / 0.92), transparent 28%),
+      radial-gradient(circle at top right, hsl(210 100% 92% / 0.88), transparent 24%),
+      linear-gradient(180deg, hsl(210 45% 98%), hsl(220 28% 96%));
+  }
+
+  .dark .liquid-page {
+    background:
+      radial-gradient(circle at top left, hsl(45 90% 35% / 0.16), transparent 30%),
+      radial-gradient(circle at top right, hsl(210 90% 45% / 0.16), transparent 26%),
+      linear-gradient(180deg, hsl(222 50% 9%), hsl(222 45% 7%));
+  }
+
+  .liquid-panel {
+    background:
+      linear-gradient(180deg, hsl(0 0% 100% / 0.82), hsl(220 45% 98% / 0.72));
+    border: 1px solid hsl(0 0% 100% / 0.7);
+    backdrop-filter: blur(20px);
+    box-shadow:
+      0 28px 80px hsl(222 60% 18% / 0.09),
+      inset 0 1px 0 hsl(0 0% 100% / 0.75);
+  }
+
+  .dark .liquid-panel {
+    background:
+      linear-gradient(180deg, hsl(222 32% 14% / 0.8), hsl(222 38% 10% / 0.74));
+    border-color: hsl(0 0% 100% / 0.08);
+    box-shadow:
+      0 28px 80px hsl(0 0% 0% / 0.3),
+      inset 0 1px 0 hsl(0 0% 100% / 0.05);
+  }
+
+  .mesh-surface {
+    background-image:
+      radial-gradient(circle at top right, hsl(45 90% 80% / 0.28), transparent 24%),
+      radial-gradient(circle at bottom left, hsl(210 90% 84% / 0.22), transparent 24%);
+  }
+
+  .dark .mesh-surface {
+    background-image:
+      radial-gradient(circle at top right, hsl(45 90% 48% / 0.12), transparent 24%),
+      radial-gradient(circle at bottom left, hsl(210 90% 56% / 0.12), transparent 24%);
+  }
+
+  .chat-canvas {
+    background:
+      radial-gradient(circle at top left, hsl(45 90% 85% / 0.26), transparent 26%),
+      radial-gradient(circle at bottom right, hsl(210 80% 88% / 0.18), transparent 25%),
+      linear-gradient(180deg, hsl(44 50% 97%), hsl(210 35% 97%));
+  }
+
+  .dark .chat-canvas {
+    background:
+      radial-gradient(circle at top left, hsl(45 90% 48% / 0.08), transparent 26%),
+      radial-gradient(circle at bottom right, hsl(210 90% 56% / 0.08), transparent 25%),
+      linear-gradient(180deg, hsl(222 44% 10%), hsl(222 40% 8%));
+  }
+
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(220 10% 72%) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(220 10% 72% / 0.65);
+    border-radius: 999px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(220 10% 58% / 0.8);
+  }
 }

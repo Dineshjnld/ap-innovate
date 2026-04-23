@@ -485,10 +485,15 @@ const initDb = async (retries = 3) => {
     "CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_user_id)",
     "CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(from_user_id, to_user_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_reverse_conversation ON messages(to_user_id, from_user_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_unread_by_recipient ON messages(to_user_id, is_read, from_user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id)",
+    "CREATE INDEX IF NOT EXISTS idx_follows_follower_following ON follows(follower_id, following_id)",
     "CREATE INDEX IF NOT EXISTS idx_connections_user_b ON connections(user_b_id)",
+    "CREATE INDEX IF NOT EXISTS idx_connections_user_a_status ON connections(user_a_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_connections_user_b_status ON connections(user_b_id, status)",
     "CREATE INDEX IF NOT EXISTS idx_auth_refresh_user ON auth_refresh_tokens(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_auth_refresh_expires ON auth_refresh_tokens(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
@@ -496,6 +501,7 @@ const initDb = async (retries = 3) => {
     "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
     "CREATE INDEX IF NOT EXISTS idx_project_versions_project ON project_versions(project_id)",
     "CREATE INDEX IF NOT EXISTS idx_project_versions_created ON project_versions(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_projects_author_updated ON projects(author_id, updated_at DESC)",
   ];
 
   for (const idx of indexes) {
@@ -709,6 +715,15 @@ const toActivity = (row, user) => ({
   timestamp: new Date(Number(row.created_at)).toISOString(),
 });
 
+const toMessageItem = (row) => ({
+  id: row.id,
+  from: row.from_user_id,
+  to: row.to_user_id,
+  text: row.text,
+  createdAt: Number(row.created_at),
+  read: row.is_read,
+});
+
 const issueAuthSession = async (userId) => {
   const refreshToken = makeRefreshToken();
   const refreshTokenHash = hashToken(refreshToken);
@@ -756,6 +771,75 @@ const findUserById = async (userId) => {
 const findUserByEmail = async (email) => {
   const r = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
   return r.rows[0] ?? null;
+};
+
+const buildProfileOverview = async (viewerId, targetId) => {
+  const targetUser = await findUserById(targetId);
+  if (!targetUser) return null;
+
+  const isOwnProfile = viewerId === targetId;
+  const connectionPair = [viewerId, targetId].sort();
+
+  const [followersRow, isFollowingRow, connectionRow, connectionsRow, projectsResult] = await Promise.all([
+    pool.query(
+      "SELECT COUNT(*)::int AS count FROM follows WHERE following_id = $1",
+      [targetId],
+    ),
+    isOwnProfile
+      ? Promise.resolve({ rowCount: 0 })
+      : pool.query(
+          "SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2",
+          [viewerId, targetId],
+        ),
+    isOwnProfile
+      ? Promise.resolve({ rowCount: 0, rows: [] })
+      : pool.query(
+          `SELECT * FROM connections
+           WHERE user_a_id = $1 AND user_b_id = $2`,
+          connectionPair,
+        ),
+    pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM connections
+       WHERE (user_a_id = $1 OR user_b_id = $1) AND status = 'accepted'`,
+      [targetId],
+    ),
+    pool.query(
+      `SELECT *
+       FROM projects
+       WHERE author_id = $1
+       ORDER BY updated_at DESC
+       LIMIT 24`,
+      [targetId],
+    ),
+  ]);
+
+  let connectionStatus = isOwnProfile ? "connected" : "none";
+  if (!isOwnProfile && connectionRow.rowCount > 0) {
+    const connection = connectionRow.rows[0];
+    if (connection.status === "accepted") {
+      connectionStatus = "connected";
+    } else if (connection.requested_by_id === viewerId) {
+      connectionStatus = "requested";
+    } else {
+      connectionStatus = "incoming-request";
+    }
+  }
+
+  return {
+    user: toAuthUser(targetUser),
+    stats: {
+      followersCount: followersRow.rows[0]?.count ?? 0,
+      connectionsCount: connectionsRow.rows[0]?.count ?? 0,
+      innovationsCount: targetUser.innovations_count ?? 0,
+    },
+    relationship: {
+      isOwnProfile,
+      isFollowing: !isOwnProfile && isFollowingRow.rowCount > 0,
+      connectionStatus,
+    },
+    projects: projectsResult.rows.map((row) => toProject(row, targetUser)),
+  };
 };
 
 const findActiveRefreshToken = async (refreshToken) => {
@@ -1133,6 +1217,26 @@ app.get("/api/users/:userId", requireAuth, async (req, res, next) => {
     const row = await findUserById(req.params.userId);
     if (!row) return res.status(404).json({ message: "User not found" });
     return res.json(toAuthUser(row));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/users/me/overview", requireAuth, async (req, res, next) => {
+  try {
+    const overview = await buildProfileOverview(req.userId, req.userId);
+    if (!overview) return res.status(401).json({ message: "Unauthorized" });
+    return res.json(overview);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/users/:userId/overview", requireAuth, async (req, res, next) => {
+  try {
+    const overview = await buildProfileOverview(req.userId, req.params.userId);
+    if (!overview) return res.status(404).json({ message: "User not found" });
+    return res.json(overview);
   } catch (err) {
     next(err);
   }
@@ -1845,6 +1949,131 @@ app.get("/api/activities", requireAuth, async (req, res, next) => {
    MESSAGE ROUTES
    ═══════════════════════════════════════════════════════════════════════════ */
 
+app.get("/api/messages/conversations", requireAuth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `WITH ranked_messages AS (
+         SELECT
+           CASE
+             WHEN from_user_id = $1 THEN to_user_id
+             ELSE from_user_id
+           END AS peer_id,
+           id,
+           from_user_id,
+           to_user_id,
+           text,
+           created_at,
+           is_read,
+           ROW_NUMBER() OVER (
+             PARTITION BY CASE WHEN from_user_id = $1 THEN to_user_id ELSE from_user_id END
+             ORDER BY created_at DESC
+           ) AS row_number
+         FROM messages
+         WHERE from_user_id = $1 OR to_user_id = $1
+       ),
+       unread_messages AS (
+         SELECT from_user_id AS peer_id, COUNT(*)::int AS unread_count
+         FROM messages
+         WHERE to_user_id = $1 AND is_read = FALSE
+         GROUP BY from_user_id
+       )
+       SELECT
+         ranked_messages.peer_id,
+         ranked_messages.id,
+         ranked_messages.from_user_id,
+         ranked_messages.to_user_id,
+         ranked_messages.text,
+         ranked_messages.created_at,
+         ranked_messages.is_read,
+         COALESCE(unread_messages.unread_count, 0) AS unread_count,
+         users.id AS user_id,
+         users.name,
+         users.email,
+         users.rank,
+         users.district,
+         users.bio,
+         users.avatar,
+         users.role,
+         users.innovations_count,
+         users.connections_count,
+         users.interests
+       FROM ranked_messages
+       JOIN users ON users.id = ranked_messages.peer_id
+       LEFT JOIN unread_messages ON unread_messages.peer_id = ranked_messages.peer_id
+       WHERE ranked_messages.row_number = 1
+       ORDER BY ranked_messages.created_at DESC
+       LIMIT 100`,
+      [req.userId],
+    );
+
+    return res.json(result.rows.map((row) => ({
+      peerId: row.peer_id,
+      peer: toAuthUser({
+        id: row.user_id,
+        name: row.name,
+        email: row.email,
+        rank: row.rank,
+        district: row.district,
+        bio: row.bio,
+        avatar: row.avatar,
+        role: row.role,
+        innovations_count: row.innovations_count,
+        connections_count: row.connections_count,
+        interests: row.interests,
+      }),
+      lastMessage: toMessageItem(row),
+      unreadCount: Number(row.unread_count ?? 0),
+    })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/messages/conversations/:peerId", requireAuth, async (req, res, next) => {
+  try {
+    const peerId = String(req.params.peerId ?? "").trim();
+    if (!peerId) return res.status(400).json({ message: "Peer ID is required" });
+
+    const peer = await findUserById(peerId);
+    if (!peer) return res.status(404).json({ message: "Recipient not found" });
+
+    const requestedLimit = Number(req.query.limit ?? 120);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 20), 300)
+      : 120;
+    const before = Number(req.query.before ?? 0);
+
+    const params = [req.userId, peerId];
+    let sql = `
+      SELECT id, from_user_id, to_user_id, text, created_at, is_read
+      FROM messages
+      WHERE (
+        (from_user_id = $1 AND to_user_id = $2)
+        OR
+        (from_user_id = $2 AND to_user_id = $1)
+      )
+    `;
+
+    if (Number.isFinite(before) && before > 0) {
+      params.push(before);
+      sql += ` AND created_at < $${params.length}`;
+    }
+
+    params.push(limit);
+    sql += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+
+    const result = await pool.query(sql, params);
+
+    return res.json({
+      peer: toAuthUser(peer),
+      messages: result.rows.map(toMessageItem).reverse(),
+      hasMore: result.rowCount === limit,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get("/api/messages/me", requireAuth, async (req, res, next) => {
   try {
     const result = await pool.query(
@@ -1855,14 +2084,7 @@ app.get("/api/messages/me", requireAuth, async (req, res, next) => {
       [req.userId],
     );
 
-    return res.json(result.rows.map(row => ({
-      id: row.id,
-      from: row.from_user_id,
-      to: row.to_user_id,
-      text: row.text,
-      createdAt: Number(row.created_at),
-      read: row.is_read,
-    })));
+    return res.json(result.rows.map(toMessageItem));
   } catch (err) {
     next(err);
   }
